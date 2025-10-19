@@ -19,7 +19,7 @@ spec:
   # Auto-shutdown configuration
   idleShutdown:
     enabled: true
-    timeoutMinutes: 30  # Shutdown after 30 minutes of inactivity
+    timeoutMinutes: 2  # Shutdown after 30 minutes of inactivity
     detection:
       httpGet:
         path: "/api/idle"
