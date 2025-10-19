@@ -76,6 +76,8 @@ func (r *WorkspaceReconciler) SetStateMachine(sm *StateMachine) {
 // +kubebuilder:rbac:groups=traefik.io,resources=ingressroutes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=traefik.io,resources=middlewares,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=pods/exec,verbs=create
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -195,7 +197,8 @@ func SetupWorkspaceController(mgr mngr.Manager, options WorkspaceControllerOptio
 	// Create state machine
 	templateResolver := NewTemplateResolver(k8sClient)
 	eventRecorder := mgr.GetEventRecorderFor("workspace-controller")
-	stateMachine := NewStateMachine(resourceManager, statusManager, templateResolver, eventRecorder)
+	idleChecker := NewWorkspaceIdleChecker(k8sClient)
+	stateMachine := NewStateMachine(resourceManager, statusManager, templateResolver, eventRecorder, idleChecker)
 
 	// Create reconciler with dependencies
 	reconciler := &WorkspaceReconciler{

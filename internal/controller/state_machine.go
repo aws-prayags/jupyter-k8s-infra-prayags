@@ -3,10 +3,12 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	workspacesv1alpha1 "github.com/jupyter-ai-contrib/jupyter-k8s/api/v1alpha1"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -18,15 +20,17 @@ type StateMachine struct {
 	statusManager    *StatusManager
 	templateResolver *TemplateResolver
 	recorder         record.EventRecorder
+	idleChecker      *WorkspaceIdleChecker
 }
 
 // NewStateMachine creates a new StateMachine
-func NewStateMachine(resourceManager *ResourceManager, statusManager *StatusManager, templateResolver *TemplateResolver, recorder record.EventRecorder) *StateMachine {
+func NewStateMachine(resourceManager *ResourceManager, statusManager *StatusManager, templateResolver *TemplateResolver, recorder record.EventRecorder, idleChecker *WorkspaceIdleChecker) *StateMachine {
 	return &StateMachine{
 		resourceManager:  resourceManager,
 		statusManager:    statusManager,
 		templateResolver: templateResolver,
 		recorder:         recorder,
+		idleChecker:      idleChecker,
 	}
 }
 
@@ -246,7 +250,9 @@ func (sm *StateMachine) reconcileDesiredRunningStatus(
 		if err := sm.statusManager.UpdateRunningStatus(ctx, workspace, snapshotStatus); err != nil {
 			return ctrl.Result{RequeueAfter: PollRequeueDelay}, err
 		}
-		return ctrl.Result{}, nil
+
+		// Handle idle shutdown for running workspaces
+		return sm.handleIdleShutdownForRunningWorkspace(ctx, workspace)
 	}
 
 	// Resources are being created/started but not fully ready yet
@@ -318,4 +324,152 @@ func (sm *StateMachine) handleTemplateValidation(
 	sm.recorder.Event(workspace, corev1.EventTypeNormal, "Validated", message)
 
 	return validation.Template, true, nil
+}
+
+// handleIdleShutdownForRunningWorkspace handles idle shutdown logic for running workspaces
+func (sm *StateMachine) handleIdleShutdownForRunningWorkspace(
+	ctx context.Context,
+	workspace *workspacesv1alpha1.Workspace) (ctrl.Result, error) {
+
+	logger := logf.FromContext(ctx).WithValues("workspace", workspace.Name)
+
+	// If idle shutdown is not enabled, no requeue needed
+	if workspace.Spec.IdleShutdown == nil || !workspace.Spec.IdleShutdown.Enabled {
+		logger.V(1).Info("Idle shutdown not enabled")
+		return ctrl.Result{}, nil
+	}
+
+	logger.Info("Processing idle shutdown", "timeout", workspace.Spec.IdleShutdown.TimeoutMinutes)
+
+	// Check if it's time to poll (every 10 seconds)
+	if sm.shouldCheckIdleNow(workspace) {
+		logger.Info("Checking workspace idle status")
+
+		if err := sm.checkAndUpdateIdleStatus(ctx, workspace); err != nil {
+			logger.Error(err, "Failed to check idle status, will retry")
+			// Continue polling on error
+		}
+
+		// Check if workspace should be stopped due to idle timeout
+		if sm.shouldStopDueToIdle(ctx, workspace) {
+			logger.Info("Workspace idle timeout reached, stopping workspace",
+				"timeout", workspace.Spec.IdleShutdown.TimeoutMinutes)
+
+			return sm.stopWorkspaceDueToIdle(ctx, workspace)
+		}
+	}
+
+	// Always requeue after 10 seconds for next idle check
+	return ctrl.Result{RequeueAfter: IdleCheckInterval}, nil
+}
+
+// checkAndUpdateIdleStatus checks idle endpoint and updates status
+func (sm *StateMachine) checkAndUpdateIdleStatus(ctx context.Context, workspace *workspacesv1alpha1.Workspace) error {
+	logger := logf.FromContext(ctx).WithValues("workspace", workspace.Name)
+
+	// Check idle status
+	idleResp, err := sm.idleChecker.CheckWorkspaceIdle(ctx, workspace)
+	if err != nil {
+		logger.Error(err, "Failed to check workspace idle endpoint")
+		return err
+	}
+
+	// Update status for debugging
+	return sm.updateIdleStatusIfChanged(ctx, workspace, idleResp)
+}
+
+// shouldCheckIdleNow determines if we should check idle status now
+func (sm *StateMachine) shouldCheckIdleNow(workspace *workspacesv1alpha1.Workspace) bool {
+	// Always check if no previous check recorded
+	if workspace.Status.IdleShutdown == nil || workspace.Status.IdleShutdown.LastChecked == nil {
+		return true
+	}
+
+	// Check every 10 seconds
+	return time.Since(workspace.Status.IdleShutdown.LastChecked.Time) >= IdleCheckInterval
+}
+
+// shouldStopDueToIdle determines if workspace should be stopped due to idle timeout
+func (sm *StateMachine) shouldStopDueToIdle(ctx context.Context, workspace *workspacesv1alpha1.Workspace) bool {
+	logger := logf.FromContext(ctx).WithValues("workspace", workspace.Name)
+
+	if workspace.Status.IdleShutdown == nil || workspace.Status.IdleShutdown.LastActivity == nil {
+		logger.V(1).Info("No idle status available, not stopping")
+		return false
+	}
+
+	timeout := time.Duration(workspace.Spec.IdleShutdown.TimeoutMinutes) * time.Minute
+	idleTime := time.Since(workspace.Status.IdleShutdown.LastActivity.Time)
+
+	if idleTime > timeout {
+		logger.Info("Idle timeout reached", "idleTime", idleTime, "timeout", timeout)
+		return true
+	}
+
+	logger.V(1).Info("Workspace still active, timeout not reached",
+		"idleTime", idleTime,
+		"timeout", timeout,
+		"remaining", timeout-idleTime)
+	return false
+}
+
+// stopWorkspaceDueToIdle stops the workspace due to idle timeout
+func (sm *StateMachine) stopWorkspaceDueToIdle(ctx context.Context, workspace *workspacesv1alpha1.Workspace) (ctrl.Result, error) {
+	logger := logf.FromContext(ctx).WithValues("workspace", workspace.Name)
+
+	// Record event
+	sm.recorder.Event(workspace, corev1.EventTypeNormal, "IdleShutdown",
+		fmt.Sprintf("Stopping workspace due to idle timeout of %d minutes", workspace.Spec.IdleShutdown.TimeoutMinutes))
+
+	// Update desired status to trigger stop
+	workspace.Spec.DesiredStatus = "Stopped"
+	if err := sm.resourceManager.client.Update(ctx, workspace); err != nil {
+		logger.Error(err, "Failed to update workspace desired status")
+		return ctrl.Result{RequeueAfter: PollRequeueDelay}, err
+	}
+
+	logger.Info("Updated workspace desired status to Stopped")
+
+	// Immediate requeue to start stopping process
+	return ctrl.Result{RequeueAfter: 0}, nil
+}
+
+// updateIdleStatusIfChanged updates idle status only if it has changed
+func (sm *StateMachine) updateIdleStatusIfChanged(ctx context.Context, workspace *workspacesv1alpha1.Workspace, idleResp *IdleResponse) error {
+	logger := logf.FromContext(ctx).WithValues("workspace", workspace.Name)
+
+	// Parse last activity time
+	lastActivity, err := time.Parse(time.RFC3339, idleResp.LastActivity)
+	if err != nil {
+		logger.Error(err, "Failed to parse last activity time", "lastActivity", idleResp.LastActivity)
+		return err
+	}
+
+	// Check if status needs updating
+	needsUpdate := false
+	now := metav1.NewTime(time.Now())
+
+	if workspace.Status.IdleShutdown == nil {
+		workspace.Status.IdleShutdown = &workspacesv1alpha1.IdleShutdownStatus{}
+		needsUpdate = true
+	}
+
+	// Only update if values changed
+	if workspace.Status.IdleShutdown.LastActivity == nil ||
+		!workspace.Status.IdleShutdown.LastActivity.Time.Equal(lastActivity) {
+		workspace.Status.IdleShutdown.LastActivity = &metav1.Time{Time: lastActivity}
+		needsUpdate = true
+	}
+
+	// Always update these fields for debugging
+	workspace.Status.IdleShutdown.LastChecked = &now
+	workspace.Status.IdleShutdown.Enabled = workspace.Spec.IdleShutdown.Enabled
+	workspace.Status.IdleShutdown.TimeoutMinutes = workspace.Spec.IdleShutdown.TimeoutMinutes
+
+	if needsUpdate {
+		logger.V(1).Info("Updating idle status", "lastActivity", lastActivity)
+		return sm.statusManager.client.Status().Update(ctx, workspace)
+	}
+
+	return nil
 }

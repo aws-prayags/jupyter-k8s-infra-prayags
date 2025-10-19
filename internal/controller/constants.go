@@ -48,6 +48,9 @@ const (
 	// Reconciliation timing
 	PollRequeueDelay = 200 * time.Millisecond
 	LongRequeueDelay = 60 * time.Second
+
+	// Idle shutdown constants
+	IdleCheckInterval = 10 * time.Second
 )
 
 // GenerateDeploymentName creates a consistent deployment name

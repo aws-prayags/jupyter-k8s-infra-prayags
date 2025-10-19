@@ -74,6 +74,16 @@ type AccessStrategyRef struct {
 	Namespace string `json:"namespace,omitempty"`
 }
 
+// IdleShutdownSpec defines idle shutdown configuration
+type IdleShutdownSpec struct {
+	// Enabled indicates if idle shutdown is enabled
+	Enabled bool `json:"enabled"`
+
+	// TimeoutMinutes specifies idle timeout in minutes
+	// +kubebuilder:validation:Minimum=1
+	TimeoutMinutes int `json:"timeoutMinutes"`
+}
+
 // WorkspaceSpec defines the desired state of Workspace
 type WorkspaceSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
@@ -127,6 +137,27 @@ type WorkspaceSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="templateRef is immutable"
 	// +optional
 	TemplateRef *string `json:"templateRef,omitempty"`
+
+	// IdleShutdown specifies idle shutdown configuration
+	// +optional
+	IdleShutdown *IdleShutdownSpec `json:"idleShutdown,omitempty"`
+}
+
+// IdleShutdownStatus defines the observed idle shutdown state
+type IdleShutdownStatus struct {
+	// Enabled indicates if idle shutdown is currently enabled
+	Enabled bool `json:"enabled"`
+
+	// TimeoutMinutes is the configured timeout
+	TimeoutMinutes int `json:"timeoutMinutes"`
+
+	// LastChecked is when we last checked the idle endpoint
+	// +optional
+	LastChecked *metav1.Time `json:"lastChecked,omitempty"`
+
+	// LastActivity is the last activity timestamp from the workspace
+	// +optional
+	LastActivity *metav1.Time `json:"lastActivity,omitempty"`
 }
 
 // AccessResourceStatus defines the status of a resource created from a template
@@ -173,6 +204,10 @@ type WorkspaceStatus struct {
 	// the workspace's AccessStrategy templates
 	// +optional
 	AccessResources []AccessResourceStatus `json:"accessResources,omitempty"`
+
+	// IdleShutdown contains idle shutdown status information
+	// +optional
+	IdleShutdown *IdleShutdownStatus `json:"idleShutdown,omitempty"`
 
 	// Conditions represent the current state of the Workspace resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
