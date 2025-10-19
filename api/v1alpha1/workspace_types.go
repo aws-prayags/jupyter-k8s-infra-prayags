@@ -82,6 +82,24 @@ type IdleShutdownSpec struct {
 	// TimeoutMinutes specifies idle timeout in minutes
 	// +kubebuilder:validation:Minimum=1
 	TimeoutMinutes int `json:"timeoutMinutes"`
+
+	// Detection specifies how to detect idle state
+	Detection IdleDetectionSpec `json:"detection"`
+}
+
+// IdleDetectionSpec defines idle detection methods
+type IdleDetectionSpec struct {
+	// HTTPGet specifies HTTP endpoint to check for idle status
+	HTTPGet HTTPGetAction `json:"httpGet"`
+}
+
+// HTTPGetAction defines HTTP request for idle detection
+type HTTPGetAction struct {
+	// Path to access on the HTTP server
+	Path string `json:"path"`
+
+	// Port to access on the container
+	Port int `json:"port"`
 }
 
 // WorkspaceSpec defines the desired state of Workspace
@@ -143,22 +161,7 @@ type WorkspaceSpec struct {
 	IdleShutdown *IdleShutdownSpec `json:"idleShutdown,omitempty"`
 }
 
-// IdleShutdownStatus defines the observed idle shutdown state
-type IdleShutdownStatus struct {
-	// Enabled indicates if idle shutdown is currently enabled
-	Enabled bool `json:"enabled"`
 
-	// TimeoutMinutes is the configured timeout
-	TimeoutMinutes int `json:"timeoutMinutes"`
-
-	// LastChecked is when we last checked the idle endpoint
-	// +optional
-	LastChecked *metav1.Time `json:"lastChecked,omitempty"`
-
-	// LastActivity is the last activity timestamp from the workspace
-	// +optional
-	LastActivity *metav1.Time `json:"lastActivity,omitempty"`
-}
 
 // AccessResourceStatus defines the status of a resource created from a template
 type AccessResourceStatus struct {
@@ -205,9 +208,7 @@ type WorkspaceStatus struct {
 	// +optional
 	AccessResources []AccessResourceStatus `json:"accessResources,omitempty"`
 
-	// IdleShutdown contains idle shutdown status information
-	// +optional
-	IdleShutdown *IdleShutdownStatus `json:"idleShutdown,omitempty"`
+
 
 	// Conditions represent the current state of the Workspace resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.

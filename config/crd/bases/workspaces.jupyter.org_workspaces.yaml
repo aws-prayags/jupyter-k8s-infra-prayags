@@ -1005,6 +1005,26 @@ spec:
               idleShutdown:
                 description: IdleShutdown specifies idle shutdown configuration
                 properties:
+                  detection:
+                    description: Detection specifies how to detect idle state
+                    properties:
+                      httpGet:
+                        description: HTTPGet specifies HTTP endpoint to check for
+                          idle status
+                        properties:
+                          path:
+                            description: Path to access on the HTTP server
+                            type: string
+                          port:
+                            description: Port to access on the container
+                            type: integer
+                        required:
+                        - path
+                        - port
+                        type: object
+                    required:
+                    - httpGet
+                    type: object
                   enabled:
                     description: Enabled indicates if idle shutdown is enabled
                     type: boolean
@@ -1013,6 +1033,7 @@ spec:
                     minimum: 1
                     type: integer
                 required:
+                - detection
                 - enabled
                 - timeoutMinutes
                 type: object
@@ -1528,28 +1549,6 @@ spec:
                 description: DeploymentName is the name of the deployment managing
                   the Workspace pods
                 type: string
-              idleShutdown:
-                description: IdleShutdown contains idle shutdown status information
-                properties:
-                  enabled:
-                    description: Enabled indicates if idle shutdown is currently enabled
-                    type: boolean
-                  lastActivity:
-                    description: LastActivity is the last activity timestamp from
-                      the workspace
-                    format: date-time
-                    type: string
-                  lastChecked:
-                    description: LastChecked is when we last checked the idle endpoint
-                    format: date-time
-                    type: string
-                  timeoutMinutes:
-                    description: TimeoutMinutes is the configured timeout
-                    type: integer
-                required:
-                - enabled
-                - timeoutMinutes
-                type: object
               serviceName:
                 description: ServiceName is the name of the service exposing the Workspace
                 type: string

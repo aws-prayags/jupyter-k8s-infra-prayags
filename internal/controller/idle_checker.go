@@ -74,8 +74,8 @@ func (w *WorkspaceIdleChecker) CheckWorkspaceIdle(ctx context.Context, workspace
 		return &IdleResponse{LastActivity: time.Now().Format(time.RFC3339)}, nil
 	}
 
-	// Try curl first, then fallback to python if curl fails
-	output, err := w.tryIdleEndpointCall(ctx, pod)
+	// Single curl call to get both status code and response body
+	output, err := w.callIdleEndpoint(ctx, pod, workspace)
 	if err != nil {
 		logger.Error(err, "Failed to check idle endpoint")
 		return nil, fmt.Errorf("failed to check idle status: %w", err)
@@ -167,50 +167,50 @@ func (w *WorkspaceIdleChecker) execInPod(ctx context.Context, pod *corev1.Pod, c
 	return output, nil
 }
 
-// tryIdleEndpointCall tries multiple methods to call the idle endpoint
-func (w *WorkspaceIdleChecker) tryIdleEndpointCall(ctx context.Context, pod *corev1.Pod) (string, error) {
+// callIdleEndpoint makes a single curl call to get both status code and response body
+func (w *WorkspaceIdleChecker) callIdleEndpoint(ctx context.Context, pod *corev1.Pod, workspace *workspacesv1alpha1.Workspace) (string, error) {
 	logger := logf.FromContext(ctx).WithValues("pod", pod.Name)
 
-	// Try curl first
-	curlCmd := []string{"curl", "-s", "http://localhost:8888/api/idle"}
-	logger.V(1).Info("Trying curl", "cmd", curlCmd)
-	
-	output, err := w.execInPod(ctx, pod, "", curlCmd)
-	if err == nil && output != "" {
-		logger.V(1).Info("curl succeeded")
-		return output, nil
-	}
-	logger.V(1).Info("curl failed, trying python", "error", err)
+	// Get port and path from workspace spec
+	port := workspace.Spec.IdleShutdown.Detection.HTTPGet.Port
+	path := workspace.Spec.IdleShutdown.Detection.HTTPGet.Path
 
-	// Fallback to python
-	pythonCmd := []string{"python3", "-c", `
-import urllib.request
-import json
-try:
-    with urllib.request.urlopen('http://localhost:8888/api/idle') as response:
-        data = json.loads(response.read().decode())
-        print(json.dumps(data))
-except Exception as e:
-    print(f'{{"error": "{e}"}}')
-`}
-	
-	logger.V(1).Info("Trying python", "cmd", pythonCmd)
-	output, err = w.execInPod(ctx, pod, "", pythonCmd)
-	if err == nil && output != "" {
-		logger.V(1).Info("python succeeded")
-		return output, nil
-	}
-	logger.V(1).Info("python failed, trying wget", "error", err)
+	// Single curl call with status code
+	cmd := []string{"curl", "-s", "-w", "\\nHTTP Status: %{http_code}\\n",
+		fmt.Sprintf("http://localhost:%d%s", port, path)}
 
-	// Fallback to wget
-	wgetCmd := []string{"wget", "-qO-", "http://localhost:8888/api/idle"}
-	logger.V(1).Info("Trying wget", "cmd", wgetCmd)
-	
-	output, err = w.execInPod(ctx, pod, "", wgetCmd)
-	if err == nil && output != "" {
-		logger.V(1).Info("wget succeeded")
-		return output, nil
+	logger.V(1).Info("Calling idle endpoint", "port", port, "path", path)
+
+	output, err := w.execInPod(ctx, pod, "", cmd)
+	if err != nil {
+		return "", fmt.Errorf("curl execution failed: %w", err)
 	}
 
-	return "", fmt.Errorf("all methods failed - curl: %v, python: available but failed, wget: %v", err, err)
+	// Parse output to separate response body and status code
+	lines := strings.Split(output, "\n")
+	var responseBody strings.Builder
+	var statusCode string
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "HTTP Status: ") {
+			statusCode = strings.TrimPrefix(line, "HTTP Status: ")
+		} else if line != "" {
+			if responseBody.Len() > 0 {
+				responseBody.WriteString("\n")
+			}
+			responseBody.WriteString(line)
+		}
+	}
+
+	// Handle different status codes
+	switch statusCode {
+	case "000":
+		return "", fmt.Errorf("connection refused - app starting")
+	case "404":
+		return "", fmt.Errorf("endpoint not found - wrong path")
+	case "200":
+		return responseBody.String(), nil
+	default:
+		return "", fmt.Errorf("unexpected HTTP status: %s, response: %s", statusCode, responseBody.String())
+	}
 }
