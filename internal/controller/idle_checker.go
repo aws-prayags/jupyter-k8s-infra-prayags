@@ -74,14 +74,10 @@ func (w *WorkspaceIdleChecker) CheckWorkspaceIdle(ctx context.Context, workspace
 		return &IdleResponse{LastActivity: time.Now().Format(time.RFC3339)}, nil
 	}
 
-	// Use curl to call the idle endpoint from within the pod
-	cmd := []string{"curl", "-s", "http://localhost:8888/api/idle"}
-
-	logger.V(1).Info("Executing idle check command", "cmd", cmd)
-
-	output, err := w.execInPod(ctx, pod, "", cmd)
+	// Try curl first, then fallback to python if curl fails
+	output, err := w.tryIdleEndpointCall(ctx, pod)
 	if err != nil {
-		logger.Error(err, "Failed to execute idle check command")
+		logger.Error(err, "Failed to check idle endpoint")
 		return nil, fmt.Errorf("failed to check idle status: %w", err)
 	}
 
@@ -90,6 +86,12 @@ func (w *WorkspaceIdleChecker) CheckWorkspaceIdle(ctx context.Context, workspace
 	if err := json.Unmarshal([]byte(output), &idleResp); err != nil {
 		logger.Error(err, "Failed to parse idle response", "output", output)
 		return nil, fmt.Errorf("failed to parse idle response: %w", err)
+	}
+
+	// Validate the response
+	if idleResp.LastActivity == "" {
+		logger.Error(nil, "Empty last_activity in response", "output", output)
+		return nil, fmt.Errorf("invalid idle response: empty last_activity")
 	}
 
 	logger.V(1).Info("Successfully retrieved idle status", "lastActivity", idleResp.LastActivity)
@@ -157,4 +159,52 @@ func (w *WorkspaceIdleChecker) execInPod(ctx context.Context, pod *corev1.Pod, c
 
 	logger.V(1).Info("Command executed successfully", "output", output)
 	return output, nil
+}
+
+// tryIdleEndpointCall tries multiple methods to call the idle endpoint
+func (w *WorkspaceIdleChecker) tryIdleEndpointCall(ctx context.Context, pod *corev1.Pod) (string, error) {
+	logger := logf.FromContext(ctx).WithValues("pod", pod.Name)
+
+	// Try curl first
+	curlCmd := []string{"curl", "-s", "http://localhost:8888/api/idle"}
+	logger.V(1).Info("Trying curl", "cmd", curlCmd)
+	
+	output, err := w.execInPod(ctx, pod, "", curlCmd)
+	if err == nil && output != "" {
+		logger.V(1).Info("curl succeeded")
+		return output, nil
+	}
+	logger.V(1).Info("curl failed, trying python", "error", err)
+
+	// Fallback to python
+	pythonCmd := []string{"python3", "-c", `
+import urllib.request
+import json
+try:
+    with urllib.request.urlopen('http://localhost:8888/api/idle') as response:
+        data = json.loads(response.read().decode())
+        print(json.dumps(data))
+except Exception as e:
+    print(f'{{"error": "{e}"}}')
+`}
+	
+	logger.V(1).Info("Trying python", "cmd", pythonCmd)
+	output, err = w.execInPod(ctx, pod, "", pythonCmd)
+	if err == nil && output != "" {
+		logger.V(1).Info("python succeeded")
+		return output, nil
+	}
+	logger.V(1).Info("python failed, trying wget", "error", err)
+
+	// Fallback to wget
+	wgetCmd := []string{"wget", "-qO-", "http://localhost:8888/api/idle"}
+	logger.V(1).Info("Trying wget", "cmd", wgetCmd)
+	
+	output, err = w.execInPod(ctx, pod, "", wgetCmd)
+	if err == nil && output != "" {
+		logger.V(1).Info("wget succeeded")
+		return output, nil
+	}
+
+	return "", fmt.Errorf("all methods failed - curl: %v, python: available but failed, wget: %v", err, err)
 }

@@ -1002,6 +1002,20 @@ spec:
               displayName:
                 description: Display Name of the server
                 type: string
+              idleShutdown:
+                description: IdleShutdown specifies idle shutdown configuration
+                properties:
+                  enabled:
+                    description: Enabled indicates if idle shutdown is enabled
+                    type: boolean
+                  timeoutMinutes:
+                    description: TimeoutMinutes specifies idle timeout in minutes
+                    minimum: 1
+                    type: integer
+                required:
+                - enabled
+                - timeoutMinutes
+                type: object
               image:
                 description: Image specifies the container image to use
                 type: string
@@ -1514,6 +1528,28 @@ spec:
                 description: DeploymentName is the name of the deployment managing
                   the Workspace pods
                 type: string
+              idleShutdown:
+                description: IdleShutdown contains idle shutdown status information
+                properties:
+                  enabled:
+                    description: Enabled indicates if idle shutdown is currently enabled
+                    type: boolean
+                  lastActivity:
+                    description: LastActivity is the last activity timestamp from
+                      the workspace
+                    format: date-time
+                    type: string
+                  lastChecked:
+                    description: LastChecked is when we last checked the idle endpoint
+                    format: date-time
+                    type: string
+                  timeoutMinutes:
+                    description: TimeoutMinutes is the configured timeout
+                    type: integer
+                required:
+                - enabled
+                - timeoutMinutes
+                type: object
               serviceName:
                 description: ServiceName is the name of the service exposing the Workspace
                 type: string
