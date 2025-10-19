@@ -183,6 +183,10 @@ func (w *WorkspaceIdleChecker) callIdleEndpoint(ctx context.Context, pod *corev1
 
 	output, err := w.execInPod(ctx, pod, "", cmd)
 	if err != nil {
+		// Handle curl exit codes - connection refused
+		if strings.Contains(err.Error(), "exit code 7") {
+			return "", fmt.Errorf("connection refused")
+		}
 		return "", fmt.Errorf("curl execution failed: %w", err)
 	}
 
@@ -202,15 +206,13 @@ func (w *WorkspaceIdleChecker) callIdleEndpoint(ctx context.Context, pod *corev1
 		}
 	}
 
-	// Handle different status codes
+	// Handle the three main cases
 	switch statusCode {
-	case "000":
-		return "", fmt.Errorf("connection refused - app starting")
 	case "404":
-		return "", fmt.Errorf("endpoint not found - wrong path")
+		return "", fmt.Errorf("endpoint not found")
 	case "200":
 		return responseBody.String(), nil
 	default:
-		return "", fmt.Errorf("unexpected HTTP status: %s, response: %s", statusCode, responseBody.String())
+		return "", fmt.Errorf("unexpected HTTP status: %s", statusCode)
 	}
 }

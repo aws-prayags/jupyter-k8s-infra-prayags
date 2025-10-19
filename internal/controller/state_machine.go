@@ -361,6 +361,13 @@ func (sm *StateMachine) handleIdleShutdownForRunningWorkspace(
 
 	idleResp, err := sm.checkIdleStatus(ctx, workspace)
 	if err != nil {
+		// Handle 404 as permanent failure - stop idle checking
+		if strings.Contains(err.Error(), "endpoint not found") {
+			logger.Error(err, "Idle endpoint not found, disabling idle shutdown for this workspace")
+			return ctrl.Result{}, nil // No requeue - permanent failure
+		}
+		
+		// Other errors are temporary - keep retrying
 		logger.Error(err, "Failed to check idle status, will retry")
 		// Continue polling on error
 	} else {
@@ -385,12 +392,7 @@ func (sm *StateMachine) checkIdleStatus(ctx context.Context, workspace *workspac
 	// Check idle status
 	idleResp, err := sm.idleChecker.CheckWorkspaceIdle(ctx, workspace)
 	if err != nil {
-		// If Jupyter server is not ready yet, don't treat as error
-		if strings.Contains(err.Error(), "not ready") || strings.Contains(err.Error(), "connection refused") {
-			logger.V(1).Info("Jupyter server not ready yet, skipping idle check")
-			return nil, err
-		}
-		logger.Error(err, "Failed to check workspace idle endpoint")
+		logger.Error(err, "Failed to check idle endpoint")
 		return nil, err
 	}
 
