@@ -22,7 +22,7 @@ import (
 
 // IdleResponse represents the response from /api/idle endpoint
 type IdleResponse struct {
-	LastActivity string `json:"last_activity"`
+	LastActivity string `json:"lastActiveTimestamp"`
 }
 
 // WorkspaceIdleChecker provides utilities for checking workspace idle status
@@ -81,6 +81,12 @@ func (w *WorkspaceIdleChecker) CheckWorkspaceIdle(ctx context.Context, workspace
 		return nil, fmt.Errorf("failed to check idle status: %w", err)
 	}
 
+	// Check if the response indicates connection refused (Jupyter not ready yet)
+	if strings.Contains(output, "Connection refused") || strings.Contains(output, "error") {
+		logger.V(1).Info("Jupyter server not ready yet", "output", output)
+		return nil, fmt.Errorf("jupyter server not ready: connection refused")
+	}
+
 	// Parse the JSON response
 	var idleResp IdleResponse
 	if err := json.Unmarshal([]byte(output), &idleResp); err != nil {
@@ -90,8 +96,8 @@ func (w *WorkspaceIdleChecker) CheckWorkspaceIdle(ctx context.Context, workspace
 
 	// Validate the response
 	if idleResp.LastActivity == "" {
-		logger.Error(nil, "Empty last_activity in response", "output", output)
-		return nil, fmt.Errorf("invalid idle response: empty last_activity")
+		logger.Error(nil, "Empty lastActiveTimestamp in response", "output", output)
+		return nil, fmt.Errorf("invalid idle response: empty lastActiveTimestamp")
 	}
 
 	logger.V(1).Info("Successfully retrieved idle status", "lastActivity", idleResp.LastActivity)
