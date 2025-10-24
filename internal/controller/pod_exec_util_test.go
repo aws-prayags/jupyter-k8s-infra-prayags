@@ -164,8 +164,9 @@ func TestExecInPod_Success(t *testing.T) {
 		},
 	}
 
-	// Test successful execution
-	output, err := util.ExecInPod(context.Background(), pod, "test-container", []string{"echo", "hello"})
+	// Test successful execution without stdin
+	noStdin := ""
+	output, err := util.ExecInPod(context.Background(), pod, "test-container", []string{"echo", "hello"}, noStdin)
 
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
@@ -200,7 +201,8 @@ func TestExecInPod_ExecutorCreationFailure(t *testing.T) {
 	}
 
 	// Test executor creation failure
-	output, err := util.ExecInPod(context.Background(), pod, "test-container", []string{"echo", "hello"})
+	noStdin := ""
+	output, err := util.ExecInPod(context.Background(), pod, "test-container", []string{"echo", "hello"}, noStdin)
 
 	if err == nil {
 		t.Fatal("Expected error when executor creation fails")
@@ -242,7 +244,8 @@ func TestExecInPod_StreamExecutionFailure(t *testing.T) {
 	}
 
 	// Test stream execution failure
-	output, err := util.ExecInPod(context.Background(), pod, "test-container", []string{"failing-command"})
+	noStdin := ""
+	output, err := util.ExecInPod(context.Background(), pod, "test-container", []string{"failing-command"}, noStdin)
 
 	if err == nil {
 		t.Fatal("Expected error when stream execution fails")
@@ -253,5 +256,112 @@ func TestExecInPod_StreamExecutionFailure(t *testing.T) {
 	// Should still return partial output even on error
 	if output != "partial output" {
 		t.Errorf("Expected 'partial output', got: '%s'", output)
+	}
+}
+
+func TestExecInPod_WithStdin(t *testing.T) {
+	util, err := NewPodExecUtil()
+	if err != nil {
+		t.Skipf("Skipping integration test - requires valid Kubernetes config: %v", err)
+		return
+	}
+
+	// Save original
+	original := newSPDYExecutor
+	defer func() { newSPDYExecutor = original }()
+
+	// Mock executor that captures stdin
+	var capturedStdin string
+	mockExec := &mockExecutor{
+		stdout: "stdin processed",
+	}
+	
+	// Override StreamWithContext to capture stdin
+	originalStreamWithContext := mockExec.StreamWithContext
+	mockExec.StreamWithContext = func(ctx context.Context, options remotecommand.StreamOptions) error {
+		// Capture stdin if provided
+		if options.Stdin != nil {
+			buf := make([]byte, 1024)
+			n, _ := options.Stdin.Read(buf)
+			capturedStdin = string(buf[:n])
+		}
+		return originalStreamWithContext(ctx, options)
+	}
+
+	newSPDYExecutor = func(config *rest.Config, method string, url *url.URL) (remotecommand.Executor, error) {
+		return mockExec, nil
+	}
+
+	// Create test pod
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "test-namespace",
+		},
+	}
+
+	// Test execution with stdin
+	stdinData := "test-input\nsecond-line\n"
+	output, err := util.ExecInPod(context.Background(), pod, "test-container", []string{"bash", "-c", "read line1 && read line2 && echo processed"}, stdinData)
+
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if output != "stdin processed" {
+		t.Errorf("Expected 'stdin processed', got: '%s'", output)
+	}
+	if capturedStdin != stdinData {
+		t.Errorf("Expected stdin to be '%s', got: '%s'", stdinData, capturedStdin)
+	}
+}
+
+func TestExecInPod_EmptyStdinDoesNotEnableStdin(t *testing.T) {
+	util, err := NewPodExecUtil()
+	if err != nil {
+		t.Skipf("Skipping integration test - requires valid Kubernetes config: %v", err)
+		return
+	}
+
+	// Save original
+	original := newSPDYExecutor
+	defer func() { newSPDYExecutor = original }()
+
+	// Mock executor that checks if stdin is provided
+	var stdinProvided bool
+	mockExec := &mockExecutor{
+		stdout: "no stdin",
+	}
+	
+	// Override StreamWithContext to check stdin
+	originalStreamWithContext := mockExec.StreamWithContext
+	mockExec.StreamWithContext = func(ctx context.Context, options remotecommand.StreamOptions) error {
+		stdinProvided = options.Stdin != nil
+		return originalStreamWithContext(ctx, options)
+	}
+
+	newSPDYExecutor = func(config *rest.Config, method string, url *url.URL) (remotecommand.Executor, error) {
+		return mockExec, nil
+	}
+
+	// Create test pod
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "test-namespace",
+		},
+	}
+
+	// Test execution with empty stdin
+	noStdin := ""
+	output, err := util.ExecInPod(context.Background(), pod, "test-container", []string{"echo", "hello"}, noStdin)
+
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if output != "no stdin" {
+		t.Errorf("Expected 'no stdin', got: '%s'", output)
+	}
+	if stdinProvided {
+		t.Error("Expected stdin to not be provided when empty string is passed")
 	}
 }
