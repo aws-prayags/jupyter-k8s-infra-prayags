@@ -1,0 +1,46 @@
+apiVersion: workspaces.jupyter.org/v1alpha1
+kind: WorkspaceTemplate
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"workspaces.jupyter.org/v1alpha1","kind":"WorkspaceTemplate","metadata":{"annotations":{},"name":"flexible-idle-template"},"spec":{"allowedImages":["public.ecr.aws/sagemaker/sagemaker-distribution:3.2.0-cpu"],"defaultContainerConfig":{"command":["sagemaker-code-editor","--host","0.0.0.0","--port","8888","--without-connection-token","--accept-server-license-terms"]},"defaultIdleShutdown":{"detection":{"httpGet":{"path":"/api/idle","port":8888}},"enabled":true,"timeoutMinutes":3},"defaultImage":"public.ecr.aws/sagemaker/sagemaker-distribution:3.2.0-cpu","defaultResources":{"limits":{"cpu":"1000m","memory":"2Gi"},"requests":{"cpu":"1000m","memory":"2Gi"}},"description":"Template with idle shutdown defaults and configurable bounds","displayName":"Flexible Idle Shutdown Template","idleShutdownOverrides":{"allow":true,"maxTimeoutMinutes":10,"minTimeoutMinutes":1}}}
+  creationTimestamp: "2025-10-26T01:05:25Z"
+  generation: 1
+  name: flexible-idle-template
+  resourceVersion: "28682698"
+  uid: 9acdd707-f1ee-4d22-b145-6c39933c903e
+spec:
+  allowSecondaryStorages: true
+  allowedImages:
+  - public.ecr.aws/sagemaker/sagemaker-distribution:3.2.0-cpu
+  defaultContainerConfig:
+    command:
+    - sagemaker-code-editor
+    - --host
+    - 0.0.0.0
+    - --port
+    - "8888"
+    - --without-connection-token
+    - --accept-server-license-terms
+  defaultIdleShutdown:
+    detection:
+      httpGet:
+        path: /api/idle
+        port: 8888
+    enabled: true
+    timeoutMinutes: 3
+  defaultImage: public.ecr.aws/sagemaker/sagemaker-distribution:3.2.0-cpu
+  defaultOwnershipType: Public
+  defaultResources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+  description: Template with idle shutdown defaults and configurable bounds
+  displayName: Flexible Idle Shutdown Template
+  idleShutdownOverrides:
+    allow: true
+    maxTimeoutMinutes: 10
+    minTimeoutMinutes: 1

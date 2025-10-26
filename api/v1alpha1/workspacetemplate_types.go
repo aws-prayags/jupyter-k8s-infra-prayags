@@ -23,6 +23,7 @@ import (
 )
 
 // WorkspaceTemplateSpec defines the desired state of WorkspaceTemplate
+// TODO: Re-enable immutability validation after fixing default value comparison issues
 type WorkspaceTemplateSpec struct {
 	// DisplayName is the human-readable name of this template
 	// +kubebuilder:validation:Required
@@ -178,7 +179,6 @@ type IdleShutdownOverridePolicy struct {
 // +kubebuilder:printcolumn:name="Display Name",type="string",JSONPath=".spec.displayName"
 // +kubebuilder:printcolumn:name="Default Image",type="string",JSONPath=".spec.defaultImage"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
-// +kubebuilder:validation:XValidation:rule="self.spec == oldSelf.spec",message="template spec is immutable after creation"
 
 // WorkspaceTemplate is the Schema for the workspacetemplates API
 // Templates define reusable, secure-by-default configurations for workspaces.

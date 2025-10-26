@@ -1,0 +1,13 @@
+# Test: Flexible template WITH override (same override as Jupyter)
+apiVersion: workspaces.jupyter.org/v1alpha1
+kind: Workspace
+metadata:
+  name: workspace-flexible-override
+  namespace: default
+spec:
+  displayName: "Flexible Workspace with Override"
+  templateRef: "flexible-idle-template"
+  desiredStatus: "Running"
+  idleShutdown:
+    enabled: true
+    timeoutMinutes: 5  # Same 5-minute override as Jupyter workspace

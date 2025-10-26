@@ -88,12 +88,13 @@ type IdleShutdownSpec struct {
 
 // IdleDetectionSpec defines idle detection methods
 type IdleDetectionSpec struct {
-	// HTTPGet specifies HTTP endpoint to check for idle status
-	HTTPGet HTTPGetAction `json:"httpGet"`
+	// EndpointCheck specifies HTTP endpoint to check for idle status
+	// +optional
+	EndpointCheck *EndpointCheckSpec `json:"endpointCheck,omitempty"`
 }
 
-// HTTPGetAction defines HTTP request for idle detection
-type HTTPGetAction struct {
+// EndpointCheckSpec defines HTTP endpoint check for idle detection
+type EndpointCheckSpec struct {
 	// Path to access on the HTTP server
 	Path string `json:"path"`
 

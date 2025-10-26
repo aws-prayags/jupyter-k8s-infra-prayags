@@ -21,6 +21,6 @@ spec:
     enabled: true
     timeoutMinutes: 2  # Shutdown after 30 minutes of inactivity
     detection:
-      httpGet:
+      endpointCheck:
         path: "/api/idle"
         port: 8888

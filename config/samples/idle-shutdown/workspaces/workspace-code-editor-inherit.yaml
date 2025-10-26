@@ -6,6 +6,6 @@ metadata:
   namespace: default
 spec:
   displayName: "Workspace Inheriting Template Idle Config"
-  templateRef: "flexible-idle-template"
+  templateRef: "code-editor-template"
   desiredStatus: "Running"
   # No idleShutdown specified - will inherit template's defaultIdleShutdown

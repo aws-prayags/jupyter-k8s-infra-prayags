@@ -1003,9 +1003,9 @@ spec:
                   detection:
                     description: Detection specifies how to detect idle state
                     properties:
-                      httpGet:
-                        description: HTTPGet specifies HTTP endpoint to check for
-                          idle status
+                      endpointCheck:
+                        description: EndpointCheck specifies HTTP endpoint to check
+                          for idle status
                         properties:
                           path:
                             description: Path to access on the HTTP server
@@ -1017,8 +1017,6 @@ spec:
                         - path
                         - port
                         type: object
-                    required:
-                    - httpGet
                     type: object
                   enabled:
                     description: Enabled indicates if idle shutdown is enabled
@@ -1442,9 +1440,6 @@ spec:
             - displayName
             type: object
         type: object
-        x-kubernetes-validations:
-        - message: template spec is immutable after creation
-          rule: self.spec == oldSelf.spec
     served: true
     storage: true
     subresources: {}

@@ -6,6 +6,7 @@ resources:
 - templates/flexible.yaml
 - templates/locked.yaml
 - templates/custom-endpoint.yaml
+- templates/jupyter.yaml
 
 # Valid workspace examples
 - workspaces/inherit-example.yaml

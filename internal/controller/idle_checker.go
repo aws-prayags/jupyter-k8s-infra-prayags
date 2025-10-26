@@ -176,8 +176,8 @@ func (w *WorkspaceIdleChecker) callIdleEndpoint(ctx context.Context, pod *corev1
 	logger := logf.FromContext(ctx).WithValues("pod", pod.Name)
 
 	// Get port and path from resolved idle config
-	port := idleConfig.Detection.HTTPGet.Port
-	path := idleConfig.Detection.HTTPGet.Path
+	port := idleConfig.Detection.EndpointCheck.Port
+	path := idleConfig.Detection.EndpointCheck.Path
 
 	// Single curl call with status code
 	cmd := []string{"curl", "-s", "-w", "\\nHTTP Status: %{http_code}\\n",

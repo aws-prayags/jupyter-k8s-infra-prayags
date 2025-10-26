@@ -6,20 +6,22 @@ metadata:
 spec:
   displayName: "Security Template - Locked Idle Shutdown"
   description: "Template with enforced idle shutdown, no workspace overrides allowed"
-  defaultImage: "quay.io/jupyter/minimal-notebook:latest"
+  defaultImage: "public.ecr.aws/sagemaker/sagemaker-distribution:3.2.0-cpu"
   defaultResources:
     requests:
-      cpu: "100m"
-      memory: "256Mi"
+      cpu: "1000m"
+      memory: "2Gi"
     limits:
-      cpu: "500m"
-      memory: "512Mi"
+      cpu: "1000m"
+      memory: "2Gi"
+  defaultContainerConfig:
+    command: ["sagemaker-code-editor", "--host", "0.0.0.0", "--port", "8888", "--without-connection-token", "--accept-server-license-terms"]
   # Enforced idle shutdown configuration
   defaultIdleShutdown:
     enabled: true
     timeoutMinutes: 2  # Force 2 minutes timeout for testing
     detection:
-      httpGet:
+      endpointCheck:
         path: "/api/idle"
         port: 8888
   # No overrides allowed

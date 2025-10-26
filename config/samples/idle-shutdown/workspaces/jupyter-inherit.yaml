@@ -1,0 +1,11 @@
+# Test: Jupyter template WITHOUT override (inherit template defaults)
+apiVersion: workspaces.jupyter.org/v1alpha1
+kind: Workspace
+metadata:
+  name: workspace-jupyter-inherit
+  namespace: default
+spec:
+  displayName: "Jupyter Workspace Inheriting Template"
+  templateRef: "jupyter-idle-template"
+  desiredStatus: "Running"
+  # No idleShutdown override - inherit template's 3 minutes
