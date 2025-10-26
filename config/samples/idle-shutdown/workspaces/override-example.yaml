@@ -11,5 +11,5 @@ spec:
   # Override idle shutdown timeout (within template bounds)
   idleShutdown:
     enabled: true
-    timeoutMinutes: 240  # 4 hours (within 60-1440 range)
+    timeoutMinutes: 5  # 5 minutes (within 1-10 range)
     # Keep template's detection config by not specifying it

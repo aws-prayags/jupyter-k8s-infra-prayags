@@ -17,7 +17,7 @@ spec:
   # Custom idle detection endpoint
   defaultIdleShutdown:
     enabled: true
-    timeoutMinutes: 180  # 3 hours
+    timeoutMinutes: 4  # 4 minutes for testing
     detection:
       httpGet:
         path: "/api/sessions"  # Different endpoint
@@ -25,5 +25,5 @@ spec:
   # Allow overrides but with tight bounds
   idleShutdownOverrides:
     allow: true
-    minTimeoutMinutes: 120   # At least 2 hours
-    maxTimeoutMinutes: 360   # At most 6 hours
+    minTimeoutMinutes: 2   # At least 2 minutes
+    maxTimeoutMinutes: 8   # At most 8 minutes

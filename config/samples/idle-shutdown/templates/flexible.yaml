@@ -20,7 +20,7 @@ spec:
   # Default idle shutdown configuration
   defaultIdleShutdown:
     enabled: true
-    timeoutMinutes: 120  # 2 hours default
+    timeoutMinutes: 3  # 3 minutes for testing
     detection:
       httpGet:
         path: "/api/idle"
@@ -28,5 +28,5 @@ spec:
   # Allow overrides with bounds
   idleShutdownOverrides:
     allow: true
-    minTimeoutMinutes: 60    # At least 1 hour
-    maxTimeoutMinutes: 1440  # At most 24 hours
+    minTimeoutMinutes: 1    # At least 1 minute
+    maxTimeoutMinutes: 10   # At most 10 minutes

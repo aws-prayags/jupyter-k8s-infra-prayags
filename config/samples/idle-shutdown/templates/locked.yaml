@@ -17,7 +17,7 @@ spec:
   # Enforced idle shutdown configuration
   defaultIdleShutdown:
     enabled: true
-    timeoutMinutes: 30  # Force 30 minutes timeout
+    timeoutMinutes: 2  # Force 2 minutes timeout for testing
     detection:
       httpGet:
         path: "/api/idle"

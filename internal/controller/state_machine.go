@@ -365,7 +365,7 @@ func (sm *StateMachine) handleIdleShutdownForRunningWorkspace(
 		return ctrl.Result{RequeueAfter: IdleCheckInterval}, nil
 	}
 
-	// Check idle status every time (every 5 minutes via requeue)
+	// Check idle status every time (every 30 seconds via requeue for testing)
 	logger.Info("Checking workspace idle status")
 
 	idleResp, err := sm.checkIdleStatus(ctx, workspace, idleConfig)
@@ -389,7 +389,7 @@ func (sm *StateMachine) handleIdleShutdownForRunningWorkspace(
 		}
 	}
 
-	// Always requeue after 5 minutes for next idle check
+	// Always requeue after 30 seconds for next idle check (testing)
 	logger.V(1).Info("Scheduling next idle check", "interval", IdleCheckInterval)
 	return ctrl.Result{RequeueAfter: IdleCheckInterval}, nil
 }

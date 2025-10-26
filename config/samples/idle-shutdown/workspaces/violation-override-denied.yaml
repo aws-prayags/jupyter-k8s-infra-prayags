@@ -11,4 +11,4 @@ spec:
   # This should cause ViolationTypeIdleShutdownOverrideNotAllowed
   idleShutdown:
     enabled: true
-    timeoutMinutes: 60
+    timeoutMinutes: 5

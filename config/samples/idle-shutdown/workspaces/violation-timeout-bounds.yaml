@@ -11,4 +11,4 @@ spec:
   # This should cause ViolationTypeIdleShutdownTimeoutOutOfBounds
   idleShutdown:
     enabled: true
-    timeoutMinutes: 30  # Below minimum of 60
+    timeoutMinutes: 15  # Above maximum of 10
