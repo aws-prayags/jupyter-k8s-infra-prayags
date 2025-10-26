@@ -91,6 +91,15 @@ type WorkspaceTemplateSpec struct {
 	// +kubebuilder:default="Public"
 	// +optional
 	DefaultOwnershipType string `json:"defaultOwnershipType,omitempty"`
+
+	// DefaultIdleShutdown provides default idle shutdown configuration
+	// Includes timeout, detection endpoint, and enable/disable
+	// +optional
+	DefaultIdleShutdown *IdleShutdownSpec `json:"defaultIdleShutdown,omitempty"`
+
+	// IdleShutdownOverrides controls override behavior and bounds
+	// +optional
+	IdleShutdownOverrides *IdleShutdownOverridePolicy `json:"idleShutdownOverrides,omitempty"`
 }
 
 // ResourceBounds defines minimum and maximum resource limits
@@ -146,6 +155,22 @@ type StorageConfig struct {
 	// +kubebuilder:default="/home/jovyan"
 	// +optional
 	DefaultMountPath string `json:"defaultMountPath,omitempty"`
+}
+
+// IdleShutdownOverridePolicy defines idle shutdown override constraints
+type IdleShutdownOverridePolicy struct {
+	// Allow controls whether workspaces can override idle shutdown
+	// +kubebuilder:default=true
+	// +optional
+	Allow *bool `json:"allow,omitempty"`
+
+	// MinTimeoutMinutes is the minimum allowed timeout
+	// +optional
+	MinTimeoutMinutes *int `json:"minTimeoutMinutes,omitempty"`
+
+	// MaxTimeoutMinutes is the maximum allowed timeout
+	// +optional
+	MaxTimeoutMinutes *int `json:"maxTimeoutMinutes,omitempty"`
 }
 
 // +kubebuilder:object:root=true

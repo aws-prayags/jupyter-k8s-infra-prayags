@@ -1,0 +1,15 @@
+# Example Workspace using flexible template with idle shutdown override
+apiVersion: workspaces.jupyter.org/v1alpha1
+kind: Workspace
+metadata:
+  name: workspace-idle-override
+  namespace: default
+spec:
+  displayName: "Workspace with Idle Override"
+  templateRef: "flexible-idle-template"
+  desiredStatus: "Running"
+  # Override idle shutdown timeout (within template bounds)
+  idleShutdown:
+    enabled: true
+    timeoutMinutes: 240  # 4 hours (within 60-1440 range)
+    # Keep template's detection config by not specifying it

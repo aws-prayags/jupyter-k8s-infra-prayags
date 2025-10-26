@@ -3,12 +3,15 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	workspacesv1alpha1 "github.com/jupyter-ai-contrib/jupyter-k8s/api/v1alpha1"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -18,15 +21,17 @@ type StateMachine struct {
 	statusManager    *StatusManager
 	templateResolver *TemplateResolver
 	recorder         record.EventRecorder
+	idleChecker      *WorkspaceIdleChecker
 }
 
 // NewStateMachine creates a new StateMachine
-func NewStateMachine(resourceManager *ResourceManager, statusManager *StatusManager, templateResolver *TemplateResolver, recorder record.EventRecorder) *StateMachine {
+func NewStateMachine(resourceManager *ResourceManager, statusManager *StatusManager, templateResolver *TemplateResolver, recorder record.EventRecorder, idleChecker *WorkspaceIdleChecker) *StateMachine {
 	return &StateMachine{
 		resourceManager:  resourceManager,
 		statusManager:    statusManager,
 		templateResolver: templateResolver,
 		recorder:         recorder,
+		idleChecker:      idleChecker,
 	}
 }
 
@@ -246,7 +251,9 @@ func (sm *StateMachine) reconcileDesiredRunningStatus(
 		if err := sm.statusManager.UpdateRunningStatus(ctx, workspace, snapshotStatus); err != nil {
 			return ctrl.Result{RequeueAfter: PollRequeueDelay}, err
 		}
-		return ctrl.Result{}, nil
+
+		// Handle idle shutdown for running workspaces
+		return sm.handleIdleShutdownForRunningWorkspace(ctx, workspace, resolvedTemplate)
 	}
 
 	// Resources are being created/started but not fully ready yet
@@ -318,4 +325,169 @@ func (sm *StateMachine) handleTemplateValidation(
 	sm.recorder.Event(workspace, corev1.EventTypeNormal, "Validated", message)
 
 	return validation.Template, true, nil
+}
+
+// handleIdleShutdownForRunningWorkspace handles idle shutdown logic for running workspaces
+func (sm *StateMachine) handleIdleShutdownForRunningWorkspace(
+	ctx context.Context,
+	workspace *workspacesv1alpha1.Workspace,
+	resolvedTemplate *ResolvedTemplate) (ctrl.Result, error) {
+
+	logger := logf.FromContext(ctx).WithValues("workspace", workspace.Name, "resourceVersion", workspace.ResourceVersion)
+
+	// Resolve effective idle shutdown config (workspace wins if present, template fallback)
+	var idleConfig *workspacesv1alpha1.IdleShutdownSpec
+	if resolvedTemplate != nil && resolvedTemplate.IdleShutdown != nil {
+		idleConfig = resolvedTemplate.IdleShutdown // Template-based workspace (already merged)
+	} else {
+		idleConfig = workspace.Spec.IdleShutdown // Non-template workspace
+	}
+
+	// If idle shutdown is not enabled, no requeue needed
+	if idleConfig == nil || !idleConfig.Enabled {
+		logger.V(1).Info("Idle shutdown not enabled")
+		return ctrl.Result{}, nil
+	}
+
+	logger.Info("Processing idle shutdown", 
+		"timeout", idleConfig.TimeoutMinutes,
+		"resourceVersion", workspace.ResourceVersion)
+
+	// Check if pods are actually ready for idle checking
+	podsReady, err := sm.areWorkspacePodsReady(ctx, workspace)
+	if err != nil {
+		logger.Error(err, "Failed to check pod readiness")
+		return ctrl.Result{RequeueAfter: IdleCheckInterval}, nil
+	}
+
+	if !podsReady {
+		logger.Info("Workspace pods not ready yet, skipping idle check")
+		return ctrl.Result{RequeueAfter: IdleCheckInterval}, nil
+	}
+
+	// Check idle status every time (every 5 minutes via requeue)
+	logger.Info("Checking workspace idle status")
+
+	idleResp, err := sm.checkIdleStatus(ctx, workspace, idleConfig)
+	if err != nil {
+		// Handle 404 as permanent failure - stop idle checking
+		if strings.Contains(err.Error(), "endpoint not found") {
+			logger.Error(err, "Idle endpoint not found, disabling idle shutdown for this workspace")
+			return ctrl.Result{}, nil // No requeue - permanent failure
+		}
+		
+		// Other errors are temporary - keep retrying
+		logger.Error(err, "Failed to check idle status, will retry")
+		// Continue polling on error
+	} else {
+		// Check if workspace should be stopped due to idle timeout
+		if sm.checkIdleTimeout(ctx, workspace, idleResp, idleConfig) {
+			logger.Info("Workspace idle timeout reached, stopping workspace",
+				"timeout", idleConfig.TimeoutMinutes)
+
+			return sm.stopWorkspaceDueToIdle(ctx, workspace, idleConfig)
+		}
+	}
+
+	// Always requeue after 5 minutes for next idle check
+	logger.V(1).Info("Scheduling next idle check", "interval", IdleCheckInterval)
+	return ctrl.Result{RequeueAfter: IdleCheckInterval}, nil
+}
+
+// checkIdleStatus checks idle endpoint and returns the response
+func (sm *StateMachine) checkIdleStatus(ctx context.Context, workspace *workspacesv1alpha1.Workspace, idleConfig *workspacesv1alpha1.IdleShutdownSpec) (*IdleResponse, error) {
+	logger := logf.FromContext(ctx).WithValues("workspace", workspace.Name)
+
+	// Check idle status using resolved config
+	idleResp, err := sm.idleChecker.CheckWorkspaceIdle(ctx, workspace, idleConfig)
+	if err != nil {
+		logger.Error(err, "Failed to check idle endpoint")
+		return nil, err
+	}
+
+	logger.V(1).Info("Successfully retrieved idle status", "lastActivity", idleResp.LastActivity)
+	return idleResp, nil
+}
+
+
+
+// stopWorkspaceDueToIdle stops the workspace due to idle timeout
+func (sm *StateMachine) stopWorkspaceDueToIdle(ctx context.Context, workspace *workspacesv1alpha1.Workspace, idleConfig *workspacesv1alpha1.IdleShutdownSpec) (ctrl.Result, error) {
+	logger := logf.FromContext(ctx).WithValues("workspace", workspace.Name)
+
+	// Record event
+	sm.recorder.Event(workspace, corev1.EventTypeNormal, "IdleShutdown",
+		fmt.Sprintf("Stopping workspace due to idle timeout of %d minutes", idleConfig.TimeoutMinutes))
+
+	// Update desired status to trigger stop
+	workspace.Spec.DesiredStatus = "Stopped"
+	if err := sm.resourceManager.client.Update(ctx, workspace); err != nil {
+		logger.Error(err, "Failed to update workspace desired status")
+		return ctrl.Result{RequeueAfter: PollRequeueDelay}, err
+	}
+
+	logger.Info("Updated workspace desired status to Stopped")
+
+	// Immediate requeue to start stopping process
+	return ctrl.Result{RequeueAfter: 0}, nil
+}
+
+// checkIdleTimeout checks if workspace should be stopped due to idle timeout
+func (sm *StateMachine) checkIdleTimeout(ctx context.Context, workspace *workspacesv1alpha1.Workspace, idleResp *IdleResponse, idleConfig *workspacesv1alpha1.IdleShutdownSpec) bool {
+	logger := logf.FromContext(ctx).WithValues("workspace", workspace.Name)
+
+	// Parse last activity time with case-insensitive timezone
+	// Some Jupyter servers return lowercase 'z' instead of uppercase 'Z' for UTC timezone
+	// RFC3339 requires uppercase 'Z', so we normalize it here
+	lastActivityStr := strings.ToUpper(idleResp.LastActivity) // Convert 'z' to 'Z'
+	lastActivity, err := time.Parse(time.RFC3339, lastActivityStr)
+	if err != nil {
+		logger.Error(err, "Failed to parse last activity time", "lastActivity", idleResp.LastActivity)
+		return false
+	}
+
+	timeout := time.Duration(idleConfig.TimeoutMinutes) * time.Minute
+	idleTime := time.Since(lastActivity)
+
+	if idleTime > timeout {
+		logger.Info("Idle timeout reached", "idleTime", idleTime, "timeout", timeout, "lastActivity", lastActivity)
+		return true
+	}
+
+	logger.V(1).Info("Workspace still active, timeout not reached",
+		"idleTime", idleTime,
+		"timeout", timeout,
+		"remaining", timeout-idleTime,
+		"lastActivity", lastActivity)
+	return false
+}
+
+// areWorkspacePodsReady checks if workspace pods are ready for idle checking
+func (sm *StateMachine) areWorkspacePodsReady(ctx context.Context, workspace *workspacesv1alpha1.Workspace) (bool, error) {
+	logger := logf.FromContext(ctx).WithValues("workspace", workspace.Name)
+
+	// List pods with the workspace labels
+	podList := &corev1.PodList{}
+	labels := GenerateLabels(workspace.Name)
+
+	if err := sm.resourceManager.client.List(ctx, podList, client.InNamespace(workspace.Namespace), client.MatchingLabels(labels)); err != nil {
+		return false, fmt.Errorf("failed to list pods: %w", err)
+	}
+
+	// Check if we have any running and ready pods
+	for _, pod := range podList.Items {
+		if pod.Status.Phase == corev1.PodRunning {
+			// Check if pod is ready (all readiness probes passed)
+			for _, condition := range pod.Status.Conditions {
+				if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+					logger.V(1).Info("Found ready workspace pod", "pod", pod.Name)
+					return true, nil
+				}
+			}
+			logger.V(1).Info("Found running but not ready pod", "pod", pod.Name)
+		}
+	}
+
+	logger.V(1).Info("No ready workspace pods found")
+	return false, nil
 }

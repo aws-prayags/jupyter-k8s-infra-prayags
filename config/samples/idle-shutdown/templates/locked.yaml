@@ -1,0 +1,27 @@
+# Example WorkspaceTemplate with locked idle shutdown (no overrides allowed)
+apiVersion: workspaces.jupyter.org/v1alpha1
+kind: WorkspaceTemplate
+metadata:
+  name: security-idle-template
+spec:
+  displayName: "Security Template - Locked Idle Shutdown"
+  description: "Template with enforced idle shutdown, no workspace overrides allowed"
+  defaultImage: "quay.io/jupyter/minimal-notebook:latest"
+  defaultResources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  # Enforced idle shutdown configuration
+  defaultIdleShutdown:
+    enabled: true
+    timeoutMinutes: 30  # Force 30 minutes timeout
+    detection:
+      httpGet:
+        path: "/api/idle"
+        port: 8888
+  # No overrides allowed
+  idleShutdownOverrides:
+    allow: false

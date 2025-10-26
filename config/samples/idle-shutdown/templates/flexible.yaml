@@ -1,0 +1,32 @@
+# Example WorkspaceTemplate with flexible idle shutdown (allows overrides with bounds)
+apiVersion: workspaces.jupyter.org/v1alpha1
+kind: WorkspaceTemplate
+metadata:
+  name: flexible-idle-template
+spec:
+  displayName: "Flexible Idle Shutdown Template"
+  description: "Template with idle shutdown defaults and configurable bounds"
+  defaultImage: "quay.io/jupyter/minimal-notebook:latest"
+  allowedImages:
+    - "quay.io/jupyter/minimal-notebook:latest"
+    - "quay.io/jupyter/scipy-notebook:latest"
+  defaultResources:
+    requests:
+      cpu: "200m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+  # Default idle shutdown configuration
+  defaultIdleShutdown:
+    enabled: true
+    timeoutMinutes: 120  # 2 hours default
+    detection:
+      httpGet:
+        path: "/api/idle"
+        port: 8888
+  # Allow overrides with bounds
+  idleShutdownOverrides:
+    allow: true
+    minTimeoutMinutes: 60    # At least 1 hour
+    maxTimeoutMinutes: 1440  # At most 24 hours

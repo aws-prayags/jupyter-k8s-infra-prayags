@@ -1,0 +1,26 @@
+apiVersion: workspaces.jupyter.org/v1alpha1
+kind: Workspace
+metadata:
+  name: jupyter-idle-shutdown-example
+  namespace: default
+spec:
+  displayName: "Jupyter Lab with Auto-Shutdown"
+  image: "public.ecr.aws/sagemaker/sagemaker-distribution:3.2.0-cpu"
+  containerConfig:
+    command: ["jupyter", "lab", "--core-mode", "--ip", "0.0.0.0", "--port", "8888"]
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1000m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+  desiredStatus: "Running"
+  # Auto-shutdown configuration
+  idleShutdown:
+    enabled: true
+    timeoutMinutes: 2  # Shutdown after 60 minutes of inactivity
+    detection:
+      httpGet:
+        path: "/api/idle"
+        port: 8888

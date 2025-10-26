@@ -1,0 +1,11 @@
+# Example Workspace using locked template (should work)
+apiVersion: workspaces.jupyter.org/v1alpha1
+kind: Workspace
+metadata:
+  name: workspace-locked-idle
+  namespace: default
+spec:
+  displayName: "Workspace with Locked Idle Template"
+  templateRef: "security-idle-template"
+  desiredStatus: "Running"
+  # No idleShutdown specified - template doesn't allow overrides anyway

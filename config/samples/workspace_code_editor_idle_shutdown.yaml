@@ -1,0 +1,26 @@
+apiVersion: workspaces.jupyter.org/v1alpha1
+kind: Workspace
+metadata:
+  name: code-editor-idle-shutdown-example
+  namespace: default
+spec:
+  displayName: "SageMaker Code Editor with Auto-Shutdown"
+  image: "public.ecr.aws/sagemaker/sagemaker-distribution:3.2.0-cpu"
+  containerConfig:
+    command: ["sagemaker-code-editor", "--host", "0.0.0.0", "--port", "8888", "--without-connection-token", "--accept-server-license-terms"]
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1000m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+  desiredStatus: "Running"
+  # Auto-shutdown configuration
+  idleShutdown:
+    enabled: true
+    timeoutMinutes: 2  # Shutdown after 30 minutes of inactivity
+    detection:
+      httpGet:
+        path: "/api/idle"
+        port: 8888
