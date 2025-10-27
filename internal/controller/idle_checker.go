@@ -176,6 +176,9 @@ func (w *WorkspaceIdleChecker) callIdleEndpoint(ctx context.Context, pod *corev1
 	logger := logf.FromContext(ctx).WithValues("pod", pod.Name)
 
 	// Get port and path from resolved idle config
+	if idleConfig.Detection.EndpointCheck == nil {
+		return "", fmt.Errorf("endpointCheck is nil in idle config")
+	}
 	port := idleConfig.Detection.EndpointCheck.Port
 	path := idleConfig.Detection.EndpointCheck.Path
 

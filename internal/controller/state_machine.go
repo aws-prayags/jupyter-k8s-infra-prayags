@@ -349,6 +349,21 @@ func (sm *StateMachine) handleIdleShutdownForRunningWorkspace(
 		return ctrl.Result{}, nil
 	}
 
+	logger.Info("Resolved idle config", 
+		"enabled", idleConfig.Enabled,
+		"timeoutMinutes", idleConfig.TimeoutMinutes,
+		"hasDetection", idleConfig.Detection != nil,
+		"hasEndpointCheck", idleConfig.Detection != nil && idleConfig.Detection.EndpointCheck != nil)
+	
+	if idleConfig.Detection != nil && idleConfig.Detection.EndpointCheck != nil {
+		logger.Info("EndpointCheck details",
+			"path", idleConfig.Detection.EndpointCheck.Path,
+			"port", idleConfig.Detection.EndpointCheck.Port)
+	} else {
+		logger.Error(nil, "Missing idle detection config",
+			"hasDetection", idleConfig.Detection != nil)
+	}
+
 	logger.Info("Processing idle shutdown", 
 		"timeout", idleConfig.TimeoutMinutes,
 		"resourceVersion", workspace.ResourceVersion)
