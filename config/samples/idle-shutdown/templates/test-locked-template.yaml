@@ -1,11 +1,11 @@
-# Example WorkspaceTemplate for Jupyter Lab with idle shutdown
+# Test template that DENIES idle shutdown overrides
 apiVersion: workspaces.jupyter.org/v1alpha1
 kind: WorkspaceTemplate
 metadata:
-  name: jupyter-lab-template
+  name: locked-template
 spec:
-  displayName: "Jupyter Lab Template"
-  description: "Template for Jupyter Lab with idle shutdown support"
+  displayName: "Locked Template (No Overrides)"
+  description: "Template that does not allow idle shutdown overrides"
   defaultImage: "public.ecr.aws/sagemaker/sagemaker-distribution:3.2.0-cpu"
   allowedImages:
     - "public.ecr.aws/sagemaker/sagemaker-distribution:3.2.0-cpu"
@@ -18,16 +18,14 @@ spec:
       memory: "2Gi"
   defaultContainerConfig:
     command: ["jupyter", "lab", "--core-mode", "--ip", "0.0.0.0", "--port", "8888"]
-  # Default idle shutdown configuration for Jupyter
+  # Locked idle shutdown - no overrides allowed
   defaultIdleShutdown:
     enabled: true
-    timeoutMinutes: 3  # 3 minutes for testing
+    timeoutMinutes: 2  # Short timeout for testing
     detection:
       endpointCheck:
         path: "/api/idle"
         port: 8888
-  # Allow overrides with bounds
+  # DENY overrides
   idleShutdownOverrides:
-    allow: true
-    minTimeoutMinutes: 1    # At least 1 minute
-    maxTimeoutMinutes: 10   # At most 10 minutes
+    allow: false  # This should block workspace overrides

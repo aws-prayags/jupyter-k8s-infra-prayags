@@ -185,6 +185,7 @@ func (sm *StateMachine) reconcileDesiredRunningStatus(
 	// Validate template BEFORE creating any resources
 	resolvedTemplate, shouldContinue, err := sm.handleTemplateValidation(ctx, workspace, snapshotStatus)
 	if !shouldContinue {
+		logger.Info("Template validation failed, stopping reconciliation", "error", err)
 		return ctrl.Result{RequeueAfter: PollRequeueDelay}, err
 	}
 
@@ -303,6 +304,11 @@ func (sm *StateMachine) handleTemplateValidation(
 	if !validation.Valid {
 		// Validation failed - policy enforced, stop reconciliation
 		logger.Info("Validation failed, rejecting workspace", "violations", len(validation.Violations))
+		
+		// Log violation details for debugging
+		for i, violation := range validation.Violations {
+			logger.Info("Validation violation", "index", i, "type", violation.Type, "message", violation.Message)
+		}
 
 		// Record validation failure event
 		templateName := *workspace.Spec.TemplateRef
@@ -335,7 +341,8 @@ func (sm *StateMachine) handleIdleShutdownForRunningWorkspace(
 
 	logger := logf.FromContext(ctx).WithValues("workspace", workspace.Name, "resourceVersion", workspace.ResourceVersion)
 
-	// Resolve effective idle shutdown config (workspace wins if present, template fallback)
+	// Resolve effective idle shutdown config
+	// TODO - After copying of resolved spec (template+requestSpec) to workspaceSpec is implemented, we will directly use workspace.Spec
 	var idleConfig *workspacesv1alpha1.IdleShutdownSpec
 	if resolvedTemplate != nil && resolvedTemplate.IdleShutdown != nil {
 		idleConfig = resolvedTemplate.IdleShutdown // Template-based workspace (already merged)
@@ -391,7 +398,6 @@ func (sm *StateMachine) handleIdleShutdownForRunningWorkspace(
 		
 		// Other errors are temporary - keep retrying
 		logger.Error(err, "Failed to check idle status, will retry")
-		// Continue polling on error
 	} else {
 		// Check if workspace should be stopped due to idle timeout
 		if sm.checkIdleTimeout(ctx, workspace, idleResp, idleConfig) {

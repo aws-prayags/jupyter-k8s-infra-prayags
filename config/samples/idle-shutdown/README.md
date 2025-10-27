@@ -1,152 +1,83 @@
-# Idle Shutdown Template Examples
+# Idle Shutdown Examples
 
-This directory contains comprehensive examples for testing idle shutdown template support.
+This directory contains **3 essential examples** for testing idle shutdown functionality.
 
-## Directory Structure
+## Examples
 
-```
-idle-shutdown/
-├── templates/           # WorkspaceTemplate examples
-│   ├── flexible.yaml    # Template with configurable bounds
-│   ├── locked.yaml      # Template with no overrides allowed
-│   └── custom-endpoint.yaml # Template with custom detection endpoint
-├── workspaces/          # Workspace examples
-│   ├── inherit-example.yaml        # Inherits template config
-│   ├── override-example.yaml       # Valid override within bounds
-│   ├── locked-example.yaml         # Uses locked template
-│   ├── violation-override-denied.yaml    # Should fail - override denied
-│   └── violation-timeout-bounds.yaml     # Should fail - timeout out of bounds
-└── kustomization.yaml   # Apply all valid examples at once
-```
+### 1. Simple Workspace (No Template)
+**File**: `workspaces/01-simple-workspace.yaml`
+- Complete idle shutdown configuration in workspace
+- No template dependency
+- Uses Code Editor with 3-minute timeout
 
-## Quick Start
+### 2. Jupyter Template + Inherit
+**Files**: `templates/02-jupyter-template.yaml` + `workspaces/02-jupyter-workspace.yaml`
+- Template provides complete idle configuration
+- Workspace inherits everything from template
+- Uses Jupyter Lab with 3-minute timeout
 
-### Apply All Valid Examples
-```bash
-# Apply all templates and valid workspaces
-kubectl apply -k config/samples/idle-shutdown/
+### 3. Code Editor Template + Override
+**Files**: `templates/03-code-editor-template.yaml` + `workspaces/03-code-editor-workspace.yaml`
+- Template provides base configuration
+- Workspace overrides timeout (5 minutes) but keeps template's detection config
+- Uses Code Editor
 
-# Check that all resources are created
-kubectl get workspacetemplates,workspaces
-```
-
-### Test Individual Scenarios
-
-#### 1. Template Inheritance
-```bash
-kubectl apply -f templates/flexible.yaml
-kubectl apply -f workspaces/inherit-example.yaml
-
-# Verify workspace inherits template's 120-minute timeout
-kubectl describe workspace workspace-idle-inherit
-```
-
-#### 2. Valid Override
-```bash
-kubectl apply -f templates/flexible.yaml
-kubectl apply -f workspaces/override-example.yaml
-
-# Verify workspace uses overridden 240-minute timeout
-kubectl describe workspace workspace-idle-override
-```
-
-#### 3. Locked Template
-```bash
-kubectl apply -f templates/locked.yaml
-kubectl apply -f workspaces/locked-example.yaml
-
-# Verify workspace uses template's enforced 30-minute timeout
-kubectl describe workspace workspace-locked-idle
-```
-
-#### 4. Custom Detection Endpoint
-```bash
-kubectl apply -f templates/custom-endpoint.yaml
-
-# Check template uses custom endpoint /api/sessions on port 8080
-kubectl describe workspacetemplate custom-endpoint-template
-```
-
-### Test Validation Errors
-
-#### Override Denied Violation
-```bash
-kubectl apply -f templates/locked.yaml
-kubectl apply -f workspaces/violation-override-denied.yaml
-
-# Should fail with ViolationTypeIdleShutdownOverrideNotAllowed
-kubectl get workspace workspace-idle-violation-override -o jsonpath='{.status.conditions[?(@.type=="Valid")]}'
-```
-
-#### Timeout Bounds Violation
-```bash
-kubectl apply -f templates/flexible.yaml
-kubectl apply -f workspaces/violation-timeout-bounds.yaml
-
-# Should fail with ViolationTypeIdleShutdownTimeoutOutOfBounds
-kubectl get workspace workspace-idle-violation-bounds -o jsonpath='{.status.conditions[?(@.type=="Valid")]}'
-```
-
-## Template Configurations
-
-### Flexible Template
-- **Default timeout**: 120 minutes
-- **Override policy**: Allowed with bounds (60-1440 minutes)
-- **Detection**: Standard `/api/idle` on port 8888
-
-### Locked Template
-- **Default timeout**: 30 minutes
-- **Override policy**: Not allowed (`allow: false`)
-- **Detection**: Standard `/api/idle` on port 8888
-
-### Custom Endpoint Template
-- **Default timeout**: 180 minutes
-- **Override policy**: Allowed with bounds (120-360 minutes)
-- **Detection**: Custom `/api/sessions` on port 8080
-
-## Debugging Commands
+## Quick Test
 
 ```bash
-# Check workspace validation status
-kubectl get workspaces -o custom-columns="NAME:.metadata.name,VALID:.status.conditions[?(@.type=='Valid')].status,REASON:.status.conditions[?(@.type=='Valid')].reason"
+# Test Case 1: Simple workspace
+kubectl apply -f workspaces/01-simple-workspace.yaml
 
-# Get detailed validation errors
-kubectl get workspace <workspace-name> -o jsonpath='{.status.conditions[?(@.type=="Valid")].message}'
+# Test Case 2: Template + inherit
+kubectl apply -f templates/02-jupyter-template.yaml
+kubectl apply -f workspaces/02-jupyter-workspace.yaml
 
-# Check controller logs
-kubectl logs -n jupyter-k8s-system deployment/jupyter-k8s-controller-manager
+# Test Case 3: Template + override
+kubectl apply -f templates/03-code-editor-template.yaml
+kubectl apply -f workspaces/03-code-editor-workspace.yaml
 
-# Describe template details
-kubectl describe workspacetemplate <template-name>
+# Check all workspaces
+kubectl get workspaces
+```
+
+## Testing Configuration
+
+**⚠️ For Testing**: The idle check interval is set to **5 minutes** for production. For faster testing, update the constant in `internal/controller/constants.go`:
+
+```go
+// Change from:
+IdleCheckInterval = 5 * time.Minute
+
+// To (for testing):
+IdleCheckInterval = 1 * time.Minute  // or 30 * time.Second
+```
+
+Then rebuild and redeploy the controller.
+
+## Expected Behavior
+
+All 3 cases should:
+- ✅ Create workspace successfully
+- ✅ Start pod and reach Running status
+- ✅ Begin idle checking (check controller logs)
+- ✅ Shut down after configured timeout of inactivity
+
+## Debugging
+
+```bash
+# Watch workspace status
+kubectl get workspace <workspace-name> -w
+
+# Check controller logs for idle checking
+kubectl logs -n jupyter-k8s-system deployment/jupyter-k8s-controller-manager -f | grep -E "(idle|Resolved idle config)"
+
+# Test endpoint manually
+kubectl exec -it <pod-name> -- curl -s http://localhost:8888/api/idle
 ```
 
 ## Cleanup
 
 ```bash
-# Delete all idle shutdown examples
-kubectl delete -k config/samples/idle-shutdown/
-
-# Or delete individual resources
-kubectl delete workspaces workspace-idle-inherit workspace-idle-override workspace-locked-idle
-kubectl delete workspacetemplates flexible-idle-template security-idle-template custom-endpoint-template
+kubectl delete workspace --all
+kubectl delete workspacetemplate --all
 ```
-
-## Expected Behavior
-
-### ✅ Should Work
-- Workspaces inheriting template idle shutdown config
-- Valid workspace overrides within template bounds
-- Locked templates preventing any overrides
-- Custom detection endpoints from templates
-- Non-template workspaces (backward compatibility)
-
-### ❌ Should Fail with Validation Errors
-- Workspace trying to override locked template
-- Workspace timeout outside template bounds
-- Invalid template references
-
-## Integration with Existing Samples
-
-These examples complement the existing idle shutdown samples in the main samples directory:
-- `workspace_jupyter_idle_shutdown.yaml` - Non-template workspace (still works)
-- `workspace_code_editor_idle_shutdown.yaml` - Non-template workspace (still works)
