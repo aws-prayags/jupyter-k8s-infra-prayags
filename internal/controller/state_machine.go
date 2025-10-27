@@ -186,7 +186,7 @@ func (sm *StateMachine) reconcileDesiredRunningStatus(
 	resolvedTemplate, shouldContinue, err := sm.handleTemplateValidation(ctx, workspace, snapshotStatus)
 	if !shouldContinue {
 		logger.Info("Template validation failed, stopping reconciliation", "error", err)
-		return ctrl.Result{RequeueAfter: PollRequeueDelay}, err
+		return ctrl.Result{}, nil
 	}
 
 	// Ensure PVC exists first (if storage is configured)
