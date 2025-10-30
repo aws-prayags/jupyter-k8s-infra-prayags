@@ -485,12 +485,14 @@ deploy-aws-internal: helm-generate load-images-aws ## Deploy helm chart to remot
 		--set controllerManager.container.imagePullPolicy=Always \
 		--set controllerManager.container.image.repository=$(ECR_REGISTRY)/$(ECR_REPOSITORY) \
 		--set controllerManager.container.image.tag=latest \
+		--set controllerManager.container.env.CLUSTER_ID="$(EKS_CONTEXT)" \
 		--set application.imagesPullPolicy=Always \
 		--set application.imagesRegistry=$(ECR_REGISTRY) \
 		--set accessResources.traefik.enable=true \
 		--set workspacePodWatching.enable=true \
 		--set extensionApi.enable=true
 	@echo "Helm chart jupyter-k8s deployed successfully to remote AWS cluster"
+	@echo "CLUSTER_ID set to: $(EKS_CONTEXT)"
 	@echo "Restarting deployments to use new images..."
 	kubectl rollout restart deployment -n jupyter-k8s-system jupyter-k8s-controller-manager
 	rm -rf /tmp/jk8s-helm-crd-only
