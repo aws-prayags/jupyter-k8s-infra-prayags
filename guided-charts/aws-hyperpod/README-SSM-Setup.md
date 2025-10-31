@@ -58,17 +58,17 @@ EOF
 ```bash
 # Create the role
 aws iam create-role \
-  --role-name workspace-ssm-managed-node-role \
+  --role-name SageMaker-Space-SSM-Managed-Node-Role \
   --assume-role-policy-document file://ssm-managed-node-trust-policy.json \
   --description "Role for SSM managed instances in workspace pods"
 
 # Attach the required policy
 aws iam attach-role-policy \
-  --role-name workspace-ssm-managed-node-role \
+  --role-name SageMaker-Space-SSM-Managed-Node-Role \
   --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
 
 # Get the role ARN (save this for later)
-aws iam get-role --role-name workspace-ssm-managed-node-role --query 'Role.Arn' --output text
+aws iam get-role --role-name SageMaker-Space-SSM-Managed-Node-Role --query 'Role.Arn' --output text
 ```
 
 ## Step 2: Create Operator Role
@@ -111,61 +111,212 @@ EOF
 # Create minimal scoped permissions policy
 cat > operator-permissions-policy.json << EOF
 {
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "SSMActivationManagement",
-      "Effect": "Allow",
-      "Action": [
-        "ssm:CreateActivation",
-        "ssm:AddTagsToResource"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "SSMDescribeInstances",
-      "Effect": "Allow",
-      "Action": [
-        "ssm:DescribeInstanceInformation"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "SSMDeregisterWorkspaceInstances",
-      "Effect": "Allow",
-      "Action": [
-        "ssm:DeregisterManagedInstance"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "Null": {
-          "ssm:resourceTag/workspace-pod-uid": "false"
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "AllowOperatorToSSMCreateActivationForSpaces",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:CreateActivation"
+            ],
+            "Resource": "*",
+            "Condition": {
+                "StringEquals": {
+                    "aws:RequestTag/sagemaker.amazonaws.com/managed-by": "amazon-sagemaker-spaces",
+                    "aws:RequestTag/sagemaker.amazonaws.com/eks-cluster-arn": "${aws:PrincipalTag/eks-cluster-arn}"
+                }
+            }
+        },
+        {
+            "Sid": "AllowOperatorToSSMDescribeActivations",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:DescribeActivations"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "AllowOperatorToSSMDescribeSessions",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:DescribeSessions"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "AllowOperatorToSSMDeleteActivation",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:DeleteActivation"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "AllowOperatorToAddTagsToActivation",
+            "Effect": "Allow",
+            "Action": "ssm:AddTagsToResource",
+            "Resource": [
+                "arn:aws:ssm:${REGION}:${ACCOUNT_ID}:managed-instance/*",
+                "arn:aws:iam::${ACCOUNT_ID}:role/sagemaker-space-*"
+            ],
+            "Condition": {
+                "StringEquals": {
+                    "aws:RequestTag/sagemaker.amazonaws.com/managed-by": "amazon-sagemaker-spaces",
+                    "aws:RequestTag/sagemaker.amazonaws.com/eks-cluster-arn": "${aws:PrincipalTag/eks-cluster-arn}"
+                }
+            }
+        },
+        {
+            "Sid": "AllowOperatorToSSMDescribeManagedNodes",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:DescribeInstanceInformation"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "AllowOperatorToSSMDeregisterWorkspaceInstances",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:DeregisterManagedInstance"
+            ],
+            "Resource": "arn:aws:ssm:${REGION}:${ACCOUNT_ID}:managed-instance/*",
+            "Condition": {
+                "StringEquals": {
+                    "ssm:resourceTag/sagemaker.amazonaws.com/managed-by": "amazon-sagemaker-spaces",
+                    "ssm:resourceTag/sagemaker.amazonaws.com/eks-cluster-arn": "${aws:PrincipalTag/eks-cluster-arn}"
+                }
+            }
+        },
+        {
+            "Sid": "AllowOperatorToPassSsmManagedNodeRole",
+            "Effect": "Allow",
+            "Action": "iam:PassRole",
+            "Resource": "arn:aws:iam::${ACCOUNT_ID}:role/sagemaker-space-*",
+            "Condition": {
+                "StringEquals": {
+                    "iam:PassedToService": "ssm.amazonaws.com"
+                }
+            }
+        },
+        {
+            "Sid": "AllowOperatorToSSMStartSession",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:StartSession"
+            ],
+            "Resource": "arn:aws:ssm:${REGION}:${ACCOUNT_ID}:managed-instance/*",
+            "Condition": {
+                "StringEquals": {
+                    "ssm:resourceTag/sagemaker.amazonaws.com/managed-by": "amazon-sagemaker-spaces",
+                    "ssm:resourceTag/sagemaker.amazonaws.com/eks-cluster-arn": "${aws:PrincipalTag/eks-cluster-arn}"
+                }
+            }
+        },
+        {
+            "Sid": "AllowStartSessionDocuments",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:StartSession"
+            ],
+            "Resource": [
+                "arn:aws:ssm:${REGION}:${ACCOUNT_ID}:document/AWS-StartSSHSession",
+                "arn:aws:ssm:${REGION}:${ACCOUNT_ID}:document/SageMaker-Space*"
+            ]
+        },
+        {
+            "Sid": "KMSCreateKey",
+            "Effect": "Allow",
+            "Action": [
+                "kms:CreateKey"
+            ],
+            "Resource": "*",
+            "Condition": {
+                "StringEquals": {
+                    "aws:RequestTag/sagemaker.amazonaws.com/managed-by": "amazon-sagemaker-spaces",
+                    "aws:RequestTag/sagemaker.amazonaws.com/purpose": "JWT-Signing",
+                    "aws:RequestTag/sagemaker.amazonaws.com/eks-cluster-arn": "${aws:PrincipalTag/eks-cluster-arn}"
+                }
+            }
+        },
+        {
+            "Sid": "KMSCreateAlias",
+            "Effect": "Allow",
+            "Action": [
+                "kms:CreateAlias"
+            ],
+            "Resource": [
+                "arn:aws:kms:${REGION}:${ACCOUNT_ID}:key/*",
+                "arn:aws:kms:${REGION}:${ACCOUNT_ID}:alias/*"
+            ]
+        },
+        {
+            "Sid": "KMSTagResource",
+            "Effect": "Allow",
+            "Action": [
+                "kms:TagResource"
+            ],
+            "Resource": "arn:aws:kms:${REGION}:${ACCOUNT_ID}:key/*",
+            "Condition": {
+                "StringEquals": {
+                    "aws:RequestTag/sagemaker.amazonaws.com/managed-by": "amazon-sagemaker-spaces",
+                    "aws:RequestTag/sagemaker.amazonaws.com/purpose": "JWT-Signing",
+                    "aws:RequestTag/sagemaker.amazonaws.com/eks-cluster-arn": "${aws:PrincipalTag/eks-cluster-arn}"
+                }
+            }
+        },
+        {
+            "Sid": "KMSKeyOperations",
+            "Effect": "Allow",
+            "Action": [
+                "kms:DescribeKey",
+                "kms:GenerateDataKey",
+                "kms:Decrypt"
+            ],
+            "Resource": "arn:aws:kms:${REGION}:${ACCOUNT_ID}:key/*",
+            "Condition": {
+                "StringEquals": {
+                    "aws:ResourceTag/sagemaker.amazonaws.com/managed-by": "amazon-sagemaker-spaces",
+                    "aws:ResourceTag/sagemaker.amazonaws.com/purpose": "JWT-Signing",
+                    "aws:ResourceTag/sagemaker.amazonaws.com/eks-cluster-arn": "${aws:PrincipalTag/eks-cluster-arn}"
+                }
+            }
+        },
+        {
+            "Sid": "AllowOperatorToSSMDescribeDocument",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:DescribeDocument"
+            ],
+            "Resource": [
+                "arn:aws:ssm:${REGION}:${ACCOUNT_ID}:document/SageMaker-Space*"
+            ]
+        },
+        {
+            "Sid": "AllowOperatorToSSMCreateDocument",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:CreateDocument"
+            ],
+            "Resource": "arn:aws:ssm:${REGION}:${ACCOUNT_ID}:document/SageMaker-Space*",
+            "Condition": {
+                "StringEquals": {
+                    "aws:RequestTag/sagemaker.amazonaws.com/managed-by": "amazon-sagemaker-spaces",
+                    "aws:RequestTag/sagemaker.amazonaws.com/eks-cluster-arn": "${aws:PrincipalTag/eks-cluster-arn}"
+                }
+            }
+        },
+        {
+            "Sid": "AllowOperatorToEnableAdvancedTierForManagedInstances",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:UpdateServiceSetting",
+                "ssm:GetServiceSetting",
+                "ssm:ResetServiceSetting"
+            ],
+            "Resource": "arn:aws:ssm:${REGION}:${ACCOUNT_ID}:servicesetting/ssm/managed-instance/activation-tier"
         }
-      }
-    },
-    {
-      "Sid": "SSMDocumentAccess",
-      "Effect": "Allow",
-      "Action": [
-        "ssm:CreateDocument",
-        "ssm:UpdateDocument",
-        "ssm:GetDocument",
-        "ssm:DescribeDocument"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "PassRoleForSSMManagedNode",
-      "Effect": "Allow",
-      "Action": "iam:PassRole",
-      "Resource": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/workspace-ssm-managed-node-role",
-      "Condition": {
-        "StringEquals": {
-          "iam:PassedToService": "ssm.amazonaws.com"
-        }
-      }
-    }
-  ]
+    ]
 }
 EOF
 ```
@@ -175,18 +326,18 @@ EOF
 ```bash
 # Create the role
 aws iam create-role \
-  --role-name workspace-operator-role \
+  --role-name SageMakerSpaceOperatorRole \
   --assume-role-policy-document file://operator-trust-policy.json \
   --description "Role for workspace operator to manage SSM resources"
 
 # Create and attach minimal scoped permissions policy
 aws iam put-role-policy \
-  --role-name workspace-operator-role \
+  --role-name SageMakerSpaceOperatorRole \
   --policy-name WorkspaceOperatorSSMPermissions \
   --policy-document file://operator-permissions-policy.json
 
 # Get the role ARN (save this for later)
-aws iam get-role --role-name workspace-operator-role --query 'Role.Arn' --output text
+aws iam get-role --role-name SageMakerSpaceOperatorRole --query 'Role.Arn' --output text
 ```
 
 ## Step 3: Create EKS Pod Identity Association
@@ -255,7 +406,7 @@ cat > test-workspace.yaml << EOF
 apiVersion: workspace.jupyter.org/v1alpha1
 kind: Workspace
 metadata:
-  name: test-ssm-workspace
+  name: test-ssm-workspace-7
   namespace: default
 spec:
   displayName: "Test SSM Workspace"
