@@ -476,18 +476,18 @@ load-images-aws:
 	$(MAKE) load-images-aws-internal CLOUD_PROVIDER=aws
 
 deploy-aws-internal: helm-generate load-images-aws ## Deploy helm chart to remote cluster
-    @echo "Deploying jupyter-k8s CRD and controller with Helm chart to remote AWS cluster..."
-    rm -rf /tmp/jk8s-helm-crd-only
-    cp -r dist/chart /tmp/jk8s-helm-crd-only
-    cd /tmp/jk8s-helm-crd-only
-    helm upgrade --install jk8s /tmp/jk8s-helm-crd-only \
-        --namespace jupyter-k8s-system --create-namespace \
-        --set controllerManager.container.imagePullPolicy=Always \
-        --set controllerManager.container.image.repository=$(ECR_REGISTRY)/$(ECR_REPOSITORY) \
-        --set controllerManager.container.image.tag=latest \
-        --set controllerManager.container.env.CLUSTER_ID="$(EKS_CONTEXT)" \
-        --set application.imagesPullPolicy=Always \
-        --set application.imagesRegistry=$(ECR_REGISTRY) \
+	@echo "Deploying jupyter-k8s CRD and controller with Helm chart to remote AWS cluster..."
+	rm -rf /tmp/jk8s-helm-crd-only
+	cp -r dist/chart /tmp/jk8s-helm-crd-only
+	cd /tmp/jk8s-helm-crd-only && \
+	helm upgrade --install jk8s /tmp/jk8s-helm-crd-only \
+		--namespace jupyter-k8s-system --create-namespace \
+		--set controllerManager.container.imagePullPolicy=Always \
+		--set controllerManager.container.image.repository=$(ECR_REGISTRY)/$(ECR_REPOSITORY) \
+		--set controllerManager.container.image.tag=latest \
+		--set controllerManager.container.env.CLUSTER_ID="$(EKS_CONTEXT)" \
+		--set application.imagesPullPolicy=Always \
+		--set application.imagesRegistry=$(ECR_REGISTRY)
         --set workspacePodWatching.enable=true \
         --set extensionApi.enable=true
     @echo "Helm chart jupyter-k8s deployed successfully to remote AWS cluster"
