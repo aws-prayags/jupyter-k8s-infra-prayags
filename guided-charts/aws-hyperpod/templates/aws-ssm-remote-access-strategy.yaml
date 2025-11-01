@@ -2,7 +2,7 @@ apiVersion: workspace.jupyter.org/v1alpha1
 kind: WorkspaceAccessStrategy
 metadata:
   name: aws-ssm-remote-access
-  namespace: {{ .Release.Namespace }}
+  namespace: default
 spec:
   displayName: "AWS SSM Remote Access Strategy"
   
@@ -14,6 +14,35 @@ spec:
   
   # Environment variables to merge into workspace containers (if any needed)
   mergeEnv: []
+
+  # Deployment modifications for SSM remote access
+  deploymentSpecModifications:
+    podSpec:
+      additionalContainers:
+        - name: "ssm-agent-sidecar"
+          image: "308488079999.dkr.ecr.us-west-2.amazonaws.com/sagemaker/side-car:0.0.1"
+          command: ["/bin/sh"]
+          args: 
+            - "-c"
+            - "cp /usr/local/bin/remote-access-server /ssm-remote-access/ || echo \"Failed to copy: $?\"; sleep infinity"
+          volumeMounts:
+            - name: "ssm-remote-access"
+              mountPath: "/ssm-remote-access"
+          readinessProbe:
+            exec:
+              command: ["test", "-f", "/tmp/ssm-registered"]
+            initialDelaySeconds: 2
+            periodSeconds: 2
+      
+      volumes:
+        - name: "ssm-remote-access"
+          emptyDir:
+            sizeLimit: "1Gi"
+    
+    primaryContainer:
+      volumeMounts:
+        - name: "ssm-remote-access"
+          mountPath: "/ssm-remote-access"
 
   # Optional: Define access resources if needed in the future
   accessResourceTemplates: []

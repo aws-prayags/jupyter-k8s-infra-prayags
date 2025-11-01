@@ -255,7 +255,7 @@ cat > test-workspace.yaml << EOF
 apiVersion: workspace.jupyter.org/v1alpha1
 kind: Workspace
 metadata:
-  name: test-ssm-workspace
+  name: refactor-test-2
   namespace: default
 spec:
   displayName: "Test SSM Workspace"
@@ -272,6 +272,7 @@ spec:
   desiredStatus: "Running"
   accessStrategy:
     name: aws-ssm-remote-access
+    namespace: default
 EOF
 
 kubectl apply -f test-workspace.yaml
