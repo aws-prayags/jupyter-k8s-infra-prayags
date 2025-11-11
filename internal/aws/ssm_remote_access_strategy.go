@@ -192,7 +192,12 @@ func (s *SSMRemoteAccessStrategy) performSSMRegistration(ctx context.Context, po
 
 	// Step 3: Start remote access server in main container
 	logger.Info("Starting remote access server in main container")
-	serverCmd := []string{"bash", "-c", fmt.Sprintf("sudo %s > /dev/null 2>&1 &", RemoteAccessServerPath)}
+	// Run remote access server as default pod user in background:
+	// - bash -c: execute the command string in a bash shell
+	// - %s: path to the remote access server binary
+	// - > /dev/null 2>&1: redirect stdout and stderr to /dev/null (suppress output)
+	// - &: run the process in background so ExecInPod doesn't block
+	serverCmd := []string{"bash", "-c", fmt.Sprintf("%s > /dev/null 2>&1 &", RemoteAccessServerPath)}
 	if _, err := s.podExecUtil.ExecInPod(ctx, pod, WorkspaceContainerName, serverCmd, noStdin); err != nil {
 		return fmt.Errorf("failed to start remote access server: %w", err)
 	}
