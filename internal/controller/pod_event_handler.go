@@ -14,6 +14,12 @@ import (
 	workspaceutil "github.com/jupyter-ai-contrib/jupyter-k8s/internal/workspace"
 )
 
+// SSMRemoteAccessStrategyInterface defines the interface for SSM remote access operations
+type SSMRemoteAccessStrategyInterface interface {
+	SetupContainers(ctx context.Context, pod *corev1.Pod, workspace *workspacev1alpha1.Workspace, accessStrategy *workspacev1alpha1.WorkspaceAccessStrategy) error
+	CleanupSSMManagedNodes(ctx context.Context, pod *corev1.Pod) error
+}
+
 // Variables for dependency injection in tests
 var (
 	newSSMRemoteAccessStrategy = func(podExecUtil awsutil.PodExecInterface) (*awsutil.SSMRemoteAccessStrategy, error) {
@@ -26,7 +32,7 @@ var (
 type PodEventHandler struct {
 	client                  client.Client
 	resourceManager         *ResourceManager
-	ssmRemoteAccessStrategy *awsutil.SSMRemoteAccessStrategy
+	ssmRemoteAccessStrategy SSMRemoteAccessStrategyInterface
 }
 
 // NewPodEventHandler creates a new PodEventHandler
