@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/util/retry"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	workspacev1alpha1 "github.com/jupyter-ai-contrib/jupyter-k8s/api/v1alpha1"
@@ -109,7 +112,11 @@ func NewSSMRemoteAccessStrategy(ssmClient SSMRemoteAccessClientInterface, podExe
 // - Random delay (0-2s) spreads out concurrent pod events
 // - SetupInProgress flag prevents duplicate setup attempts
 // - TODO: Consider using distributed mutex for stronger concurrency guarantees
-func (s *SSMRemoteAccessStrategy) SetupContainers(ctx context.Context, pod *corev1.Pod, workspace *workspacev1alpha1.Workspace, accessStrategy *workspacev1alpha1.WorkspaceAccessStrategy) error {
+//
+// Status Updates:
+// - Updates workspace status after creating each SSM resource (activation, managed instance)
+// - Requires k8sClient parameter to perform status updates
+func (s *SSMRemoteAccessStrategy) SetupContainers(ctx context.Context, pod *corev1.Pod, workspace *workspacev1alpha1.Workspace, accessStrategy *workspacev1alpha1.WorkspaceAccessStrategy, k8sClient client.Client) error {
 	logger := logf.FromContext(ctx).WithValues("pod", pod.Name, "workspace", workspace.Name)
 
 	if s.ssmClient == nil {
@@ -193,7 +200,7 @@ func (s *SSMRemoteAccessStrategy) SetupContainers(ctx context.Context, pod *core
 	var setupErr error
 	if needSidecarSetup {
 		logger.V(1).Info("Setting up sidecar container")
-		if err := s.setupSidecarContainer(ctx, pod, workspace, accessStrategy, needCleanup); err != nil {
+		if err := s.setupSidecarContainer(ctx, pod, workspace, accessStrategy, needCleanup, k8sClient); err != nil {
 			setupErr = err
 		}
 	}
@@ -323,8 +330,8 @@ func (s *SSMRemoteAccessStrategy) writeRegistrationState(ctx context.Context, po
 	return nil
 }
 
-// setupSidecarContainer handles SSM agent registration
-func (s *SSMRemoteAccessStrategy) setupSidecarContainer(ctx context.Context, pod *corev1.Pod, workspace *workspacev1alpha1.Workspace, accessStrategy *workspacev1alpha1.WorkspaceAccessStrategy, cleanupNeeded bool) error {
+// setupSidecarContainer handles SSM agent registration and updates workspace status
+func (s *SSMRemoteAccessStrategy) setupSidecarContainer(ctx context.Context, pod *corev1.Pod, workspace *workspacev1alpha1.Workspace, accessStrategy *workspacev1alpha1.WorkspaceAccessStrategy, cleanupNeeded bool, k8sClient client.Client) error {
 	logger := logf.FromContext(ctx).WithValues("pod", pod.Name, "workspace", workspace.Name)
 	noStdin := ""
 
@@ -344,17 +351,57 @@ func (s *SSMRemoteAccessStrategy) setupSidecarContainer(ctx context.Context, pod
 	}
 	logger.Info("SSM activation created", "activationId", activationId)
 
+	// Update status with activation immediately
+	region := s.ssmClient.GetRegion()
+	podUID := string(pod.UID)
+	if err := s.addResourceToStatus(ctx, workspace, k8sClient, workspacev1alpha1.ExternalAccessResourceStatus{
+		ResourceType: "SSMActivation",
+		Provider:     "aws-ssm",
+		ResourceID:   activationId,
+		Metadata: map[string]string{
+			"podUid":    podUID,
+			"podName":   pod.Name,
+			"region":    region,
+			"createdAt": time.Now().Format(time.RFC3339),
+		},
+	}); err != nil {
+		logger.Error(err, "Failed to update status with activation, continuing anyway")
+	}
+
 	// Run registration script
 	logger.V(1).Info("Running SSM registration script in sidecar")
-	region := s.ssmClient.GetRegion()
 	// Use stdin to pass only sensitive values securely
 	cmd := []string{"bash", "-c", fmt.Sprintf("read ACTIVATION_ID && read ACTIVATION_CODE && env ACTIVATION_ID=\"$ACTIVATION_ID\" ACTIVATION_CODE=\"$ACTIVATION_CODE\" REGION=%s %s", region, SSMRegistrationScript)}
 	stdinData := fmt.Sprintf("%s\n%s\n", activationId, activationCode)
 
-	if _, err := s.podExecUtil.ExecInPod(ctx, pod, SSMAgentSidecarContainerName, cmd, stdinData); err != nil {
+	output, err := s.podExecUtil.ExecInPod(ctx, pod, SSMAgentSidecarContainerName, cmd, stdinData)
+	if err != nil {
 		return fmt.Errorf("failed to execute SSM registration script: %w", err)
 	}
 	logger.Info("SSM registration completed successfully")
+
+	// Extract managed instance ID from output
+	managedInstanceID := s.extractManagedInstanceID(output)
+	if managedInstanceID == "" {
+		logger.Error(nil, "Failed to extract managed instance ID from registration output")
+		return fmt.Errorf("failed to extract managed instance ID")
+	}
+	logger.Info("Extracted managed instance ID", "instanceId", managedInstanceID)
+
+	// Update status with managed instance immediately
+	if err := s.addResourceToStatus(ctx, workspace, k8sClient, workspacev1alpha1.ExternalAccessResourceStatus{
+		ResourceType: "SSMManagedInstance",
+		Provider:     "aws-ssm",
+		ResourceID:   managedInstanceID,
+		Metadata: map[string]string{
+			"podUid":    podUID,
+			"podName":   pod.Name,
+			"region":    region,
+			"createdAt": time.Now().Format(time.RFC3339),
+		},
+	}); err != nil {
+		logger.Error(err, "Failed to update status with managed instance, continuing anyway")
+	}
 
 	// TODO: Remove this once all deployments migrate to state-file-based readiness checks
 	logger.V(1).Info("Creating marker file for backward compatibility")
@@ -482,4 +529,68 @@ func (s *SSMRemoteAccessStrategy) GenerateVSCodeConnectionURL(ctx context.Contex
 		eksClusterARN)
 
 	return url, nil
+}
+
+// extractManagedInstanceID extracts managed instance ID from registration script output
+func (s *SSMRemoteAccessStrategy) extractManagedInstanceID(output string) string {
+	// Look for pattern: "Registration successful - Instance ID: mi-xxxxx"
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "Registration successful - Instance ID:") {
+			parts := strings.Split(line, "Instance ID:")
+			if len(parts) == 2 {
+				return strings.TrimSpace(parts[1])
+			}
+		}
+	}
+	return ""
+}
+
+// addResourceToStatus adds or updates an external resource in workspace status
+func (s *SSMRemoteAccessStrategy) addResourceToStatus(
+	ctx context.Context,
+	workspace *workspacev1alpha1.Workspace,
+	k8sClient client.Client,
+	newResource workspacev1alpha1.ExternalAccessResourceStatus,
+) error {
+	logger := logf.FromContext(ctx)
+	podUID := newResource.Metadata["podUid"]
+
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Re-fetch workspace to get latest version
+		current := &workspacev1alpha1.Workspace{}
+		if err := k8sClient.Get(ctx, client.ObjectKey{
+			Name:      workspace.Name,
+			Namespace: workspace.Namespace,
+		}, current); err != nil {
+			return err
+		}
+
+		// Check if resource already exists
+		found := false
+		for i, resource := range current.Status.ExternalAccessResources {
+			if resource.Provider == "aws-ssm" &&
+				resource.ResourceType == newResource.ResourceType &&
+				resource.Metadata != nil &&
+				resource.Metadata["podUid"] == podUID {
+				// Update existing
+				current.Status.ExternalAccessResources[i] = newResource
+				found = true
+				logger.V(1).Info("Updated existing external resource in status",
+					"resourceType", newResource.ResourceType,
+					"resourceId", newResource.ResourceID)
+				break
+			}
+		}
+
+		if !found {
+			// Add new
+			current.Status.ExternalAccessResources = append(current.Status.ExternalAccessResources, newResource)
+			logger.V(1).Info("Added new external resource to status",
+				"resourceType", newResource.ResourceType,
+				"resourceId", newResource.ResourceID)
+		}
+
+		return k8sClient.Status().Update(ctx, current)
+	})
 }

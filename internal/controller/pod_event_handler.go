@@ -176,7 +176,7 @@ func (h *PodEventHandler) handlePodRunning(ctx context.Context, pod *corev1.Pod,
 		if h.ssmRemoteAccessStrategy == nil {
 			logger.Error(nil, "SSM remote access strategy not available - cannot setup containers")
 		} else {
-			if err := h.ssmRemoteAccessStrategy.SetupContainers(ctx, pod, workspace, accessStrategy); err != nil {
+			if err := h.ssmRemoteAccessStrategy.SetupContainers(ctx, pod, workspace, accessStrategy, h.client); err != nil {
 				logger.Error(err, "Failed to setup containers")
 			}
 		}

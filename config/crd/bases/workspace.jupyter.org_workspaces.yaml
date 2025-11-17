@@ -1755,11 +1755,11 @@ spec:
                 type: string
               accessResources:
                 description: |-
-                  AccessResources provides status details of individual resources created from
+                  AccessResources provides status details of individual Kubernetes resources created from
                   the workspace's AccessStrategy templates
                 items:
-                  description: AccessResourceStatus defines the status of a resource
-                    created from a template
+                  description: AccessResourceStatus defines the status of a Kubernetes
+                    resource created from a template
                   properties:
                     apiVersion:
                       description: APIVersion of the Kubernetes resource
@@ -1857,6 +1857,36 @@ spec:
                 description: DeploymentName is the name of the deployment managing
                   the Workspace pods
                 type: string
+              externalAccessResources:
+                description: |-
+                  ExternalAccessResources provides status details of external cloud resources
+                  associated with this workspace
+                items:
+                  description: ExternalAccessResourceStatus defines the status of
+                    external cloud resources
+                  properties:
+                    metadata:
+                      additionalProperties:
+                        type: string
+                      description: Metadata provides additional context about the
+                        resource
+                      type: object
+                    provider:
+                      description: Provider identifies the cloud provider or service
+                      type: string
+                    resourceId:
+                      description: ResourceID is the unique identifier for this resource
+                        in the provider's system
+                      type: string
+                    resourceType:
+                      description: ResourceType identifies the type of external resource
+                      type: string
+                  required:
+                  - provider
+                  - resourceId
+                  - resourceType
+                  type: object
+                type: array
               serviceName:
                 description: ServiceName is the name of the service exposing the Workspace
                 type: string

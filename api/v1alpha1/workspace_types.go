@@ -188,7 +188,7 @@ type WorkspaceSpec struct {
 	PodSecurityContext *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
 }
 
-// AccessResourceStatus defines the status of a resource created from a template
+// AccessResourceStatus defines the status of a Kubernetes resource created from a template
 type AccessResourceStatus struct {
 	// Kind of the Kubernetes resource
 	Kind string `json:"kind"`
@@ -201,6 +201,22 @@ type AccessResourceStatus struct {
 
 	// Namespace of the resource
 	Namespace string `json:"namespace"`
+}
+
+// ExternalAccessResourceStatus defines the status of external cloud resources
+type ExternalAccessResourceStatus struct {
+	// ResourceType identifies the type of external resource
+	ResourceType string `json:"resourceType"`
+
+	// Provider identifies the cloud provider or service
+	Provider string `json:"provider"`
+
+	// ResourceID is the unique identifier for this resource in the provider's system
+	ResourceID string `json:"resourceId"`
+
+	// Metadata provides additional context about the resource
+	// +optional
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 // WorkspaceStatus defines the observed state of Workspace.
@@ -228,10 +244,15 @@ type WorkspaceStatus struct {
 	// +optional
 	AccessResourceSelector string `json:"accessResourceSelector,omitempty"`
 
-	// AccessResources provides status details of individual resources created from
+	// AccessResources provides status details of individual Kubernetes resources created from
 	// the workspace's AccessStrategy templates
 	// +optional
 	AccessResources []AccessResourceStatus `json:"accessResources,omitempty"`
+
+	// ExternalAccessResources provides status details of external cloud resources
+	// associated with this workspace
+	// +optional
+	ExternalAccessResources []ExternalAccessResourceStatus `json:"externalAccessResources,omitempty"`
 
 	// Conditions represent the current state of the Workspace resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
