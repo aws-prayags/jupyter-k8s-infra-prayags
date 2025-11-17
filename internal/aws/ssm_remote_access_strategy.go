@@ -553,6 +553,11 @@ func (s *SSMRemoteAccessStrategy) addResourceToStatus(
 	k8sClient client.Client,
 	newResource workspacev1alpha1.ExternalAccessResourceStatus,
 ) error {
+	// Skip status update if client not provided (e.g., in tests)
+	if k8sClient == nil {
+		return nil
+	}
+
 	logger := logf.FromContext(ctx)
 	podUID := newResource.Metadata["podUid"]
 

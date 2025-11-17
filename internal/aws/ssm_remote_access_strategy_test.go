@@ -87,6 +87,11 @@ func mockCleanup(mockSSMClient *MockSSMRemoteAccessClient, podUID string) {
 
 // mockSSMRegistration mocks SSM agent registration in sidecar
 func mockSSMRegistration(mockPodExec *MockPodExecUtil) {
+	// Return output that includes the managed instance ID
+	registrationOutput := `2025-11-17 03:29:11 [INFO] Starting SSM registration process
+2025-11-17 03:29:14 [INFO] Registration successful - Instance ID: mi-test123456789
+2025-11-17 03:29:14 [INFO] SSM registration and agent startup completed successfully`
+
 	mockPodExec.On("ExecInPod",
 		mock.Anything,
 		mock.Anything,
@@ -98,7 +103,7 @@ func mockSSMRegistration(mockPodExec *MockPodExecUtil) {
 		mock.MatchedBy(func(stdin string) bool {
 			return strings.Contains(stdin, "test-activation-id")
 		}),
-	).Return("", nil).Once()
+	).Return(registrationOutput, nil).Once()
 }
 
 // mockMarkerFile mocks marker file creation for backward compatibility
@@ -334,7 +339,7 @@ func TestSetupContainers_FirstTimeSetup_NoStateFile(t *testing.T) {
 	})
 
 	// Execute
-	err = strategy.SetupContainers(context.Background(), pod, workspace, accessStrategy)
+	err = strategy.SetupContainers(context.Background(), pod, workspace, accessStrategy, nil)
 
 	// Verify
 	assert.NoError(t, err)
@@ -405,7 +410,7 @@ func TestSetupContainers_SidecarContainerRestart(t *testing.T) {
 	})
 
 	// Execute
-	err = strategy.SetupContainers(context.Background(), pod, workspace, accessStrategy)
+	err = strategy.SetupContainers(context.Background(), pod, workspace, accessStrategy, nil)
 
 	// Verify
 	assert.NoError(t, err)
@@ -454,7 +459,7 @@ func TestSetupContainers_NoRestartDetected_AlreadySetup(t *testing.T) {
 	})
 
 	// Execute
-	err = strategy.SetupContainers(context.Background(), pod, workspace, accessStrategy)
+	err = strategy.SetupContainers(context.Background(), pod, workspace, accessStrategy, nil)
 
 	// Verify - should exit early with no error
 	assert.NoError(t, err)
@@ -499,7 +504,7 @@ func TestSetupContainers_SidecarNotRunning(t *testing.T) {
 	})
 
 	// Execute
-	err = strategy.SetupContainers(context.Background(), pod, workspace, accessStrategy)
+	err = strategy.SetupContainers(context.Background(), pod, workspace, accessStrategy, nil)
 
 	// Verify - should exit early with no error, no operations
 	assert.NoError(t, err)
@@ -548,7 +553,7 @@ func TestSetupContainers_SetupInProgress(t *testing.T) {
 	})
 
 	// Execute
-	err = strategy.SetupContainers(context.Background(), pod, workspace, accessStrategy)
+	err = strategy.SetupContainers(context.Background(), pod, workspace, accessStrategy, nil)
 
 	// Verify - should exit early with no error
 	assert.NoError(t, err)
