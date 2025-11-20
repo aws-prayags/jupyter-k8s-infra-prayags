@@ -7,6 +7,8 @@ import (
 
 // handleOpenAPIRoot returns the OpenAPI v3 root document listing available API groups
 func (s *ExtensionServer) handleOpenAPIRoot(w http.ResponseWriter, r *http.Request) {
+	setupLog.Info("OpenAPI v3 root request received", "path", r.URL.Path)
+	
 	response := map[string]interface{}{
 		"paths": map[string]interface{}{
 			"apis/connection.workspace.jupyter.org/v1alpha1": map[string]string{
@@ -22,6 +24,8 @@ func (s *ExtensionServer) handleOpenAPIRoot(w http.ResponseWriter, r *http.Reque
 
 // handleOpenAPISpec returns the OpenAPI v3 spec for connection.workspace.jupyter.org/v1alpha1
 func (s *ExtensionServer) handleOpenAPISpec(w http.ResponseWriter, r *http.Request) {
+	setupLog.Info("OpenAPI v3 spec request received", "path", r.URL.Path)
+	
 	spec := map[string]interface{}{
 		"openapi": "3.0.0",
 		"info": map[string]interface{}{
