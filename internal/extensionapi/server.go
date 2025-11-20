@@ -161,6 +161,10 @@ func (s *ExtensionServer) registerAllRoutes() {
 	// Register API discovery route
 	s.registerRoute(s.config.ApiPath, s.handleDiscovery)
 
+	// Register OpenAPI v3 routes
+	s.registerRoute("/openapi/v3", s.handleOpenAPIRoot)
+	s.registerRoute("/openapi/v3/apis/connection.workspace.jupyter.org/v1alpha1", s.handleOpenAPISpec)
+
 	// Register all namespaced routes
 	s.registerNamespacedRoutes(map[string]func(http.ResponseWriter, *http.Request){
 		"workspaceconnections":   s.HandleConnectionCreate,
