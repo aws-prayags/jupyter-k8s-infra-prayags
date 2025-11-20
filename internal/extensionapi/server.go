@@ -12,10 +12,13 @@ import (
 	"github.com/jupyter-ai-contrib/jupyter-k8s/internal/aws"
 	"github.com/jupyter-ai-contrib/jupyter-k8s/internal/jwt"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/apiserver/pkg/server/mux"
 	genericoptions "k8s.io/apiserver/pkg/server/options"
+	"k8s.io/apiserver/pkg/registry/rest"
 	"k8s.io/apiserver/pkg/util/compatibility"
 	"k8s.io/client-go/kubernetes"
 	v1 "k8s.io/client-go/kubernetes/typed/authorization/v1"
@@ -29,6 +32,16 @@ var (
 	scheme   = runtime.NewScheme()
 	codecs   = serializer.NewCodecFactory(scheme)
 )
+
+func init() {
+	// Register dummy resource types with the scheme
+	scheme.AddKnownTypes(
+		schema.GroupVersion{Group: "connection.workspace.jupyter.org", Version: "v1alpha1"},
+		&DummyResource{},
+		&DummyResourceList{},
+	)
+	metav1.AddToGroupVersion(scheme, schema.GroupVersion{Group: "connection.workspace.jupyter.org", Version: "v1alpha1"})
+}
 
 // ExtensionServer represents the extension API HTTP server
 type ExtensionServer struct {
@@ -226,7 +239,42 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 		return nil, fmt.Errorf("failed to create generic API server: %w", err)
 	}
 
+	// Install dummy API group to test GenericAPIServer integration
+	if err := installDummyAPIGroup(genericServer); err != nil {
+		return nil, fmt.Errorf("failed to install dummy API group: %w", err)
+	}
+
 	return genericServer, nil
+}
+
+// installDummyAPIGroup installs a minimal dummy resource for testing
+func installDummyAPIGroup(genericServer *genericapiserver.GenericAPIServer) error {
+	apiGroupInfo := genericapiserver.NewDefaultAPIGroupInfo(
+		"connection.workspace.jupyter.org",
+		scheme,
+		runtime.NewParameterCodec(scheme),
+		codecs,
+	)
+
+	// Set version priority
+	apiGroupInfo.PrioritizedVersions = []schema.GroupVersion{
+		{Group: "connection.workspace.jupyter.org", Version: "v1alpha1"},
+	}
+
+	// Register dummy resource storage
+	v1alpha1Storage := map[string]rest.Storage{}
+	v1alpha1Storage["dummyresources"] = &DummyStorage{}
+	apiGroupInfo.VersionedResourcesStorageMap["v1alpha1"] = v1alpha1Storage
+
+	// Install the API group
+	setupLog.Info("Installing dummy API group", "group", "connection.workspace.jupyter.org", "version", "v1alpha1")
+	if err := genericServer.InstallAPIGroup(&apiGroupInfo); err != nil {
+		setupLog.Error(err, "Failed to install dummy API group")
+		return fmt.Errorf("failed to install API group: %w", err)
+	}
+
+	setupLog.Info("Successfully installed dummy API group with dummyresources", "group", "connection.workspace.jupyter.org", "version", "v1alpha1")
+	return nil
 }
 
 func createJWTSignerFactory(config *ExtensionConfig) (jwt.SignerFactory, error) {
