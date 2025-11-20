@@ -50,14 +50,17 @@ type ResponseKind struct {
 // Supports both v1 and v2 aggregated discovery formats
 func (s *ExtensionServer) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 	acceptHeader := r.Header.Get("Accept")
+	setupLog.Info("Discovery request received", "accept", acceptHeader, "path", r.URL.Path)
 
 	// Check if client wants v2 format
 	if strings.Contains(acceptHeader, "apidiscovery.k8s.io/v2") {
+		setupLog.Info("Serving v2 discovery format")
 		s.handleDiscoveryV2(w, r)
 		return
 	}
 
 	// Default to v1 format
+	setupLog.Info("Serving v1 discovery format")
 	s.handleDiscoveryV1(w, r)
 }
 
