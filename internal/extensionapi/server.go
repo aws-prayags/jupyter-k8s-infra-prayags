@@ -19,6 +19,8 @@ import (
 	"k8s.io/apiserver/pkg/server/mux"
 	genericoptions "k8s.io/apiserver/pkg/server/options"
 	"k8s.io/apiserver/pkg/registry/rest"
+	openapicommon "k8s.io/kube-openapi/pkg/common"
+	spec "k8s.io/kube-openapi/pkg/validation/spec"
 	"k8s.io/apiserver/pkg/util/compatibility"
 	"k8s.io/client-go/kubernetes"
 	v1 "k8s.io/client-go/kubernetes/typed/authorization/v1"
@@ -231,6 +233,20 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 	// Apply options to configure authentication automatically
 	if err := recommendedOptions.ApplyTo(serverConfig); err != nil {
 		return nil, fmt.Errorf("failed to apply recommended options: %w", err)
+	}
+
+	// Configure OpenAPI - required for InstallAPIGroup
+	// Use a minimal OpenAPI config
+	serverConfig.OpenAPIV3Config = &openapicommon.OpenAPIV3Config{
+		Info: &spec.Info{
+			InfoProps: spec.InfoProps{
+				Title:   "Extension API Server",
+				Version: "v1alpha1",
+			},
+		},
+		GetDefinitions: func(ref openapicommon.ReferenceCallback) map[string]openapicommon.OpenAPIDefinition {
+			return map[string]openapicommon.OpenAPIDefinition{}
+		},
 	}
 
 	// Create GenericAPIServer
