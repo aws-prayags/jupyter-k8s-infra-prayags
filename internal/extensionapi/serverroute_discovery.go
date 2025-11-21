@@ -139,11 +139,11 @@ func (s *ExtensionServer) handleOpenAPIV3(w http.ResponseWriter, r *http.Request
 			"version": "v1alpha1",
 		},
 		"paths": map[string]interface{}{
-			"/apis/connection.workspace.jupyter.org/v1alpha1/namespaces/{namespace}/workspaceconnections": {
+			"/apis/connection.workspace.jupyter.org/v1alpha1/namespaces/{namespace}/workspaceconnections": map[string]interface{}{
 				"post": map[string]interface{}{
 					"description": "Create a WorkspaceConnection",
-					"parameters": []map[string]interface{}{
-						{
+					"parameters": []interface{}{
+						map[string]interface{}{
 							"name":     "namespace",
 							"in":       "path",
 							"required": true,
@@ -174,11 +174,11 @@ func (s *ExtensionServer) handleOpenAPIV3(w http.ResponseWriter, r *http.Request
 					},
 				},
 			},
-			"/apis/connection.workspace.jupyter.org/v1alpha1/namespaces/{namespace}/connectionaccessreviews": {
+			"/apis/connection.workspace.jupyter.org/v1alpha1/namespaces/{namespace}/connectionaccessreviews": map[string]interface{}{
 				"post": map[string]interface{}{
 					"description": "Create a ConnectionAccessReview",
-					"parameters": []map[string]interface{}{
-						{
+					"parameters": []interface{}{
+						map[string]interface{}{
 							"name":     "namespace",
 							"in":       "path",
 							"required": true,
@@ -212,9 +212,9 @@ func (s *ExtensionServer) handleOpenAPIV3(w http.ResponseWriter, r *http.Request
 		},
 		"components": map[string]interface{}{
 			"schemas": map[string]interface{}{
-				"connection.workspace.jupyter.org.v1alpha1.WorkspaceConnection": {
+				"connection.workspace.jupyter.org.v1alpha1.WorkspaceConnection": map[string]interface{}{
 					"type":     "object",
-					"required": []string{"apiVersion", "kind", "metadata", "spec"},
+					"required": []interface{}{"apiVersion", "kind", "metadata", "spec"},
 					"properties": map[string]interface{}{
 						"apiVersion": map[string]string{
 							"type":        "string",
@@ -231,7 +231,7 @@ func (s *ExtensionServer) handleOpenAPIV3(w http.ResponseWriter, r *http.Request
 						"spec": map[string]interface{}{
 							"type":        "object",
 							"description": "Specification of the desired behavior",
-							"required":    []string{"workspaceName", "connectionType"},
+							"required":    []interface{}{"workspaceName", "connectionType"},
 							"properties": map[string]interface{}{
 								"workspaceName": map[string]string{
 									"type":        "string",
@@ -255,17 +255,17 @@ func (s *ExtensionServer) handleOpenAPIV3(w http.ResponseWriter, r *http.Request
 							"description": "Most recently observed status",
 						},
 					},
-					"x-kubernetes-group-version-kind": []map[string]string{
-						{
+					"x-kubernetes-group-version-kind": []interface{}{
+						map[string]string{
 							"group":   "connection.workspace.jupyter.org",
 							"kind":    "WorkspaceConnection",
 							"version": "v1alpha1",
 						},
 					},
 				},
-				"connection.workspace.jupyter.org.v1alpha1.ConnectionAccessReview": {
+				"connection.workspace.jupyter.org.v1alpha1.ConnectionAccessReview": map[string]interface{}{
 					"type":     "object",
-					"required": []string{"apiVersion", "kind", "spec"},
+					"required": []interface{}{"apiVersion", "kind", "spec"},
 					"properties": map[string]interface{}{
 						"apiVersion": map[string]string{
 							"type":        "string",
@@ -278,7 +278,7 @@ func (s *ExtensionServer) handleOpenAPIV3(w http.ResponseWriter, r *http.Request
 						"spec": map[string]interface{}{
 							"type":        "object",
 							"description": "Specification of the access review request",
-							"required":    []string{"workspaceName", "user"},
+							"required":    []interface{}{"workspaceName", "user"},
 							"properties": map[string]interface{}{
 								"workspaceName": map[string]string{
 									"type":        "string",
@@ -305,8 +305,8 @@ func (s *ExtensionServer) handleOpenAPIV3(w http.ResponseWriter, r *http.Request
 							},
 						},
 					},
-					"x-kubernetes-group-version-kind": []map[string]string{
-						{
+					"x-kubernetes-group-version-kind": []interface{}{
+						map[string]string{
 							"group":   "connection.workspace.jupyter.org",
 							"kind":    "ConnectionAccessReview",
 							"version": "v1alpha1",
