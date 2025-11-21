@@ -236,7 +236,7 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 	}
 
 	// Configure OpenAPI - required for InstallAPIGroup
-	// Use a minimal OpenAPI config
+	// Provide OpenAPI definitions for our custom types
 	serverConfig.OpenAPIV3Config = &openapicommon.OpenAPIV3Config{
 		Info: &spec.Info{
 			InfoProps: spec.InfoProps{
@@ -244,9 +244,7 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 				Version: "v1alpha1",
 			},
 		},
-		GetDefinitions: func(ref openapicommon.ReferenceCallback) map[string]openapicommon.OpenAPIDefinition {
-			return map[string]openapicommon.OpenAPIDefinition{}
-		},
+		GetDefinitions: getDummyResourceOpenAPIDefinitions,
 	}
 
 	// Create GenericAPIServer
@@ -291,6 +289,39 @@ func installDummyAPIGroup(genericServer *genericapiserver.GenericAPIServer) erro
 
 	setupLog.Info("Successfully installed dummy API group with dummyresources", "group", "connection.workspace.jupyter.org", "version", "v1alpha1")
 	return nil
+}
+
+// getDummyResourceOpenAPIDefinitions provides OpenAPI definitions for DummyResource
+func getDummyResourceOpenAPIDefinitions(ref openapicommon.ReferenceCallback) map[string]openapicommon.OpenAPIDefinition {
+	return map[string]openapicommon.OpenAPIDefinition{
+		"github.com/jupyter-ai-contrib/jupyter-k8s/internal/extensionapi.DummyResource": {
+			Schema: spec.Schema{
+				SchemaProps: spec.SchemaProps{
+					Type: []string{"object"},
+					Properties: map[string]spec.Schema{
+						"apiVersion": {
+							SchemaProps: spec.SchemaProps{
+								Type:   []string{"string"},
+								Format: "",
+							},
+						},
+						"kind": {
+							SchemaProps: spec.SchemaProps{
+								Type:   []string{"string"},
+								Format: "",
+							},
+						},
+						"metadata": {
+							SchemaProps: spec.SchemaProps{
+								Type:   []string{"object"},
+								Format: "",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 }
 
 func createJWTSignerFactory(config *ExtensionConfig) (jwt.SignerFactory, error) {
