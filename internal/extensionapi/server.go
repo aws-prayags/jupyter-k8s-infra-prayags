@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	connectionv1alpha1 "github.com/jupyter-ai-contrib/jupyter-k8s/api/connection/v1alpha1"
 	"github.com/jupyter-ai-contrib/jupyter-k8s/internal/aws"
 	"github.com/jupyter-ai-contrib/jupyter-k8s/internal/jwt"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -39,11 +40,13 @@ func init() {
 	// Register standard Kubernetes types (required by GenericAPIServer)
 	metav1.AddToGroupVersion(scheme, schema.GroupVersion{Version: "v1"})
 	
-	// Register dummy resource types with the scheme
+	// Register resource types with the scheme
 	scheme.AddKnownTypes(
 		schema.GroupVersion{Group: "connection.workspace.jupyter.org", Version: "v1alpha1"},
 		&DummyResource{},
 		&DummyResourceList{},
+		&connectionv1alpha1.WorkspaceConnectionRequest{},
+		&connectionv1alpha1.WorkspaceConnectionResponse{},
 	)
 	metav1.AddToGroupVersion(scheme, schema.GroupVersion{Group: "connection.workspace.jupyter.org", Version: "v1alpha1"})
 }
@@ -278,9 +281,10 @@ func installDummyAPIGroup(genericServer *genericapiserver.GenericAPIServer) erro
 		{Group: "connection.workspace.jupyter.org", Version: "v1alpha1"},
 	}
 
-	// Register dummy resource storage
+	// Register resource storage
 	v1alpha1Storage := map[string]rest.Storage{}
 	v1alpha1Storage["dummyresources"] = &DummyStorage{}
+	v1alpha1Storage["workspaceconnections"] = &WorkspaceConnectionStorage{server: nil} // server will be set later if needed
 	apiGroupInfo.VersionedResourcesStorageMap["v1alpha1"] = v1alpha1Storage
 
 	// Install the API group
@@ -294,7 +298,7 @@ func installDummyAPIGroup(genericServer *genericapiserver.GenericAPIServer) erro
 	return nil
 }
 
-// getDummyResourceOpenAPIDefinitions provides OpenAPI definitions for DummyResource
+// getDummyResourceOpenAPIDefinitions provides OpenAPI definitions for resources
 func getDummyResourceOpenAPIDefinitions(ref openapicommon.ReferenceCallback) map[string]openapicommon.OpenAPIDefinition {
 	return map[string]openapicommon.OpenAPIDefinition{
 		"github.com/jupyter-ai-contrib/jupyter-k8s/internal/extensionapi.DummyResource": {
@@ -318,6 +322,47 @@ func getDummyResourceOpenAPIDefinitions(ref openapicommon.ReferenceCallback) map
 							SchemaProps: spec.SchemaProps{
 								Type:   []string{"object"},
 								Format: "",
+							},
+						},
+					},
+				},
+			},
+		},
+		"github.com/jupyter-ai-contrib/jupyter-k8s/api/connection/v1alpha1.WorkspaceConnectionRequest": {
+			Schema: spec.Schema{
+				SchemaProps: spec.SchemaProps{
+					Type: []string{"object"},
+					Properties: map[string]spec.Schema{
+						"apiVersion": {
+							SchemaProps: spec.SchemaProps{
+								Type: []string{"string"},
+							},
+						},
+						"kind": {
+							SchemaProps: spec.SchemaProps{
+								Type: []string{"string"},
+							},
+						},
+						"metadata": {
+							SchemaProps: spec.SchemaProps{
+								Type: []string{"object"},
+							},
+						},
+						"spec": {
+							SchemaProps: spec.SchemaProps{
+								Type: []string{"object"},
+								Properties: map[string]spec.Schema{
+									"workspaceName": {
+										SchemaProps: spec.SchemaProps{
+											Type: []string{"string"},
+										},
+									},
+									"workspaceConnectionType": {
+										SchemaProps: spec.SchemaProps{
+											Type: []string{"string"},
+										},
+									},
+								},
 							},
 						},
 					},
