@@ -9,10 +9,15 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	dummyv1alpha1 "github.com/jupyter-ai-contrib/jupyter-k8s/api/dummy/v1alpha1"
 	"github.com/jupyter-ai-contrib/jupyter-k8s/internal/aws"
+	"github.com/jupyter-ai-contrib/jupyter-k8s/internal/extensionapi/storage"
 	"github.com/jupyter-ai-contrib/jupyter-k8s/internal/jwt"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apiserver/pkg/registry/rest"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/apiserver/pkg/server/mux"
 	genericoptions "k8s.io/apiserver/pkg/server/options"
@@ -29,6 +34,11 @@ var (
 	scheme   = runtime.NewScheme()
 	codecs   = serializer.NewCodecFactory(scheme)
 )
+
+func init() {
+	// Register dummy API types for InstallAPIGroup
+	utilruntime.Must(dummyv1alpha1.AddToScheme(scheme))
+}
 
 // ExtensionServer represents the extension API HTTP server
 type ExtensionServer struct {
@@ -229,6 +239,35 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 	return genericServer, nil
 }
 
+// installDummyAPIGroup installs the dummy API group using InstallAPIGroup
+// This demonstrates how to use InstallAPIGroup alongside PathRecorderMux
+func installDummyAPIGroup(genericServer *genericapiserver.GenericAPIServer) error {
+	// Create storage
+	dummyStorage := storage.NewDummyStorage()
+
+	// Create API group info
+	apiGroupInfo := genericapiserver.NewDefaultAPIGroupInfo(
+		dummyv1alpha1.GroupName,
+		scheme,
+		metav1.ParameterCodec,
+		codecs,
+	)
+
+	// Register storage for v1alpha1
+	v1alpha1Storage := map[string]rest.Storage{
+		"dummyresources": dummyStorage,
+	}
+	apiGroupInfo.VersionedResourcesStorageMap["v1alpha1"] = v1alpha1Storage
+
+	// Install API group
+	if err := genericServer.InstallAPIGroup(&apiGroupInfo); err != nil {
+		return fmt.Errorf("failed to install dummy API group: %w", err)
+	}
+
+	setupLog.Info("Installed dummy API group", "group", dummyv1alpha1.GroupName, "version", "v1alpha1")
+	return nil
+}
+
 func createJWTSignerFactory(config *ExtensionConfig) (jwt.SignerFactory, error) {
 	// Create KMS client and signer factory
 	ctx := context.Background()
@@ -285,7 +324,12 @@ func SetupExtensionAPIServerWithManager(mgr ctrl.Manager, config *ExtensionConfi
 		return err
 	}
 
-	// Create and configure extension server
+	// Install dummy API group (InstallAPIGroup approach)
+	if err := installDummyAPIGroup(genericServer); err != nil {
+		return err
+	}
+
+	// Create and configure extension server (PathRecorderMux approach)
 	server := createExtensionServer(genericServer, config, &logger, mgr.GetClient(), sarClient, signerFactory)
 
 	// Add server to manager
