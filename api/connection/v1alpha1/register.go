@@ -48,6 +48,9 @@ var (
 func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
 		&ConnectionAccessReview{},
+		&WorkspaceConnectionRequest{},
+		&WorkspaceConnectionResponse{},
+		&WorkspaceConnectionResponseList{},
 	)
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
 	return nil

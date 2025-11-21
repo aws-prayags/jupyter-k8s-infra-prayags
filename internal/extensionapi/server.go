@@ -9,14 +9,17 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	connectionv1alpha1 "github.com/jupyter-ai-contrib/jupyter-k8s/api/connection/v1alpha1"
 	"github.com/jupyter-ai-contrib/jupyter-k8s/internal/aws"
 	"github.com/jupyter-ai-contrib/jupyter-k8s/internal/jwt"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/apiserver/pkg/server/mux"
 	genericoptions "k8s.io/apiserver/pkg/server/options"
 	"k8s.io/apiserver/pkg/util/compatibility"
+	"k8s.io/apiserver/pkg/registry/rest"
 	"k8s.io/client-go/kubernetes"
 	v1 "k8s.io/client-go/kubernetes/typed/authorization/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -29,6 +32,13 @@ var (
 	scheme   = runtime.NewScheme()
 	codecs   = serializer.NewCodecFactory(scheme)
 )
+
+func init() {
+	// Register connection API types with the scheme
+	if err := connectionv1alpha1.AddToScheme(scheme); err != nil {
+		panic(err)
+	}
+}
 
 // ExtensionServer represents the extension API HTTP server
 type ExtensionServer struct {
@@ -158,12 +168,15 @@ func (s *ExtensionServer) registerAllRoutes() {
 	// Register health check route
 	s.registerRoute("/health", s.handleHealth)
 
+	// NOTE: Discovery and workspaceconnections routes are now handled by InstallAPIGroup
+	// Commenting out to avoid conflicts with InstallAPIGroup's automatic route registration
+	
 	// Register API discovery route
-	s.registerRoute(s.config.ApiPath, s.handleDiscovery)
+	// s.registerRoute(s.config.ApiPath, s.handleDiscovery)
 
 	// Register all namespaced routes
 	s.registerNamespacedRoutes(map[string]func(http.ResponseWriter, *http.Request){
-		"workspaceconnections":   s.HandleConnectionCreate,
+		// "workspaceconnections": s.HandleConnectionCreate, // Now handled by InstallAPIGroup
 		"connectionaccessreview": s.handleConnectionAccessReview,
 	})
 }
@@ -229,6 +242,36 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 	return genericServer, nil
 }
 
+// installConnectionAPI installs the connection API group using InstallAPIGroup
+func installConnectionAPI(genericServer *genericapiserver.GenericAPIServer) error {
+	// Create API group info
+	apiGroupInfo := genericapiserver.NewDefaultAPIGroupInfo(
+		connectionv1alpha1.GroupName,
+		scheme,
+		metav1.ParameterCodec,
+		codecs,
+	)
+
+	// Create storage for workspaceconnections
+	workspaceConnectionStorage := &WorkspaceConnectionStorage{
+		// TODO: Pass required dependencies when moving actual implementation
+	}
+
+	// Register storage for v1alpha1
+	v1alpha1Storage := map[string]rest.Storage{
+		"workspaceconnections": workspaceConnectionStorage,
+	}
+	apiGroupInfo.VersionedResourcesStorageMap["v1alpha1"] = v1alpha1Storage
+
+	// Install the API group
+	if err := genericServer.InstallAPIGroup(&apiGroupInfo); err != nil {
+		return fmt.Errorf("failed to install connection API group: %w", err)
+	}
+
+	setupLog.Info("Installed connection API group using InstallAPIGroup")
+	return nil
+}
+
 func createJWTSignerFactory(config *ExtensionConfig) (jwt.SignerFactory, error) {
 	// Create KMS client and signer factory
 	ctx := context.Background()
@@ -285,7 +328,12 @@ func SetupExtensionAPIServerWithManager(mgr ctrl.Manager, config *ExtensionConfi
 		return err
 	}
 
-	// Create and configure extension server
+	// Install connection API group using InstallAPIGroup
+	if err := installConnectionAPI(genericServer); err != nil {
+		return err
+	}
+
+	// Create and configure extension server (for legacy routes like connectionaccessreview)
 	server := createExtensionServer(genericServer, config, &logger, mgr.GetClient(), sarClient, signerFactory)
 
 	// Add server to manager
