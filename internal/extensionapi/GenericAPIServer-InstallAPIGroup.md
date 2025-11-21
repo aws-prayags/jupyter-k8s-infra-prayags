@@ -86,6 +86,124 @@ An alternative implementation approach using Kubernetes' `InstallAPIGroup` for f
 | **Complexity** | Higher (more boilerplate) | Lower (direct handlers) |
 | **Use Case** | Resource-oriented APIs | RPC-style operations |
 
+## OpenAPI Configuration Requirement
+
+### The Error
+
+When using `InstallAPIGroup`, you may encounter this error:
+
+```
+unable to get openapi models: OpenAPIV3 config must not be nil
+```
+
+### Why It Happens
+
+`InstallAPIGroup` automatically tries to:
+1. Generate OpenAPI schemas from your Go types
+2. Register these schemas at `/openapi/v2` and `/openapi/v3` endpoints
+3. Enable features like `kubectl explain`, API documentation, and client generation
+
+The framework expects `serverConfig.OpenAPIV3Config` to be configured, even if you don't need these features.
+
+### What OpenAPI Provides
+
+When enabled, OpenAPI gives you:
+- **`kubectl explain`** - Field documentation and type information
+- **API Documentation** - Swagger/OpenAPI specs at `/openapi/v2` and `/openapi/v3`
+- **Client Generation** - Auto-generate strongly-typed clients
+- **Server-Side Validation** - Schema-based request validation
+
+### Disabling OpenAPI (Minimal Implementation)
+
+For a minimal implementation where you don't need OpenAPI features, you can disable it:
+
+```go
+func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOptions) (*genericapiserver.GenericAPIServer, error) {
+    serverConfig := genericapiserver.NewRecommendedConfig(codecs)
+    serverConfig.EffectiveVersion = compatibility.DefaultBuildEffectiveVersion()
+    
+    if err := recommendedOptions.ApplyTo(serverConfig); err != nil {
+        return nil, fmt.Errorf("failed to apply recommended options: %w", err)
+    }
+    
+    // Disable OpenAPI for simplicity
+    serverConfig.OpenAPIConfig = nil
+    serverConfig.OpenAPIV3Config = nil
+    
+    genericServer, err := serverConfig.Complete().New("extension-apiserver", genericapiserver.NewEmptyDelegate())
+    if err != nil {
+        return nil, fmt.Errorf("failed to create generic API server: %w", err)
+    }
+    
+    return genericServer, nil
+}
+```
+
+**What still works:**
+- ✅ API discovery (`kubectl api-resources`)
+- ✅ Creating resources (`kubectl create`)
+- ✅ API group listing (`/apis`, `/apis/dummy.jupyter.org`)
+- ✅ Resource discovery (`/apis/dummy.jupyter.org/v1alpha1`)
+- ✅ All CRUD operations
+
+**What doesn't work:**
+- ❌ `kubectl explain dummyresource`
+- ❌ `/openapi/v2` endpoint
+- ❌ `/openapi/v3` endpoint
+- ❌ Automatic OpenAPI-based validation
+
+### Enabling OpenAPI (Full Implementation)
+
+For production APIs, you should configure OpenAPI:
+
+```go
+import (
+    "k8s.io/kube-openapi/pkg/common"
+    "k8s.io/apiserver/pkg/server"
+)
+
+// Define OpenAPI definitions for your types
+func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
+    return map[string]common.OpenAPIDefinition{
+        "github.com/your-org/your-api/v1alpha1.YourResource": {
+            Schema: spec.Schema{
+                SchemaProps: spec.SchemaProps{
+                    Description: "YourResource description",
+                    Type:        []string{"object"},
+                    Properties: map[string]spec.Schema{
+                        "spec": {
+                            SchemaProps: spec.SchemaProps{
+                                Description: "Spec defines the desired state",
+                                // ... field definitions
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    }
+}
+
+// Configure in server setup
+serverConfig.OpenAPIConfig = genericapiserver.DefaultOpenAPIConfig(
+    GetOpenAPIDefinitions,
+    openapi.NewDefinitionNamer(scheme),
+)
+serverConfig.OpenAPIConfig.Info.Title = "Your API"
+serverConfig.OpenAPIConfig.Info.Version = "v1alpha1"
+
+serverConfig.OpenAPIV3Config = genericapiserver.DefaultOpenAPIV3Config(
+    GetOpenAPIDefinitions,
+    openapi.NewDefinitionNamer(scheme),
+)
+```
+
+### Recommendation
+
+- **For demos/testing**: Disable OpenAPI (simpler, faster to implement)
+- **For production APIs**: Enable OpenAPI (better UX, tooling support)
+- **For CRDs**: Use CustomResourceDefinitions instead (automatic OpenAPI generation)
+
 ## Implementation Structure
 
 ### 1. Scheme Registration

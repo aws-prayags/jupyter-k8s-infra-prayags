@@ -230,6 +230,11 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 		return nil, fmt.Errorf("failed to apply recommended options: %w", err)
 	}
 
+	// Disable OpenAPI for simplicity (required for InstallAPIGroup)
+	// This prevents the "OpenAPIV3 config must not be nil" error
+	serverConfig.OpenAPIConfig = nil
+	serverConfig.OpenAPIV3Config = nil
+
 	// Create GenericAPIServer
 	genericServer, err := serverConfig.Complete().New("extension-apiserver", genericapiserver.NewEmptyDelegate())
 	if err != nil {
