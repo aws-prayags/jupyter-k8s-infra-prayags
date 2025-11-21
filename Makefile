@@ -477,15 +477,6 @@ load-images-aws-internal: manifests generate fmt vet ## Build and push container
 	$(CONTAINER_TOOL) push $(ECR_REGISTRY)/$(ECR_REPOSITORY):latest
 	@echo "Controller image built and pushed successfully to $(ECR_REGISTRY)/$(ECR_REPOSITORY):latest"
 
-	@echo "Building auth middleware image..."
-	$(CONTAINER_TOOL) build $(BUILD_OPTS) --platform=linux/amd64 -t $(ECR_REGISTRY)/$(ECR_REPOSITORY_AUTH):latest -f images/authmiddleware/Dockerfile .
-	$(CONTAINER_TOOL) push $(ECR_REGISTRY)/$(ECR_REPOSITORY_AUTH):latest
-	@echo "Auth middleware image built and pushed successfully to $(ECR_REGISTRY)/$(ECR_REPOSITORY_AUTH):latest"
-
-	@echo "Building application images..."
-	$(MAKE) -C images push-all-aws CLOUD_PROVIDER=aws CONTAINER_TOOL=$(CONTAINER_TOOL)
-	@echo "All images built and pushed successfully to $(ECR_REGISTRY)"
-
 .PHONY: load-images-aws
 load-images-aws:
 	$(MAKE) load-images-aws-internal CLOUD_PROVIDER=aws
