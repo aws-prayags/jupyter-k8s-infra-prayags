@@ -41,6 +41,10 @@ var (
 func init() {
 	// Register dummy API types for InstallAPIGroup
 	utilruntime.Must(dummyv1alpha1.AddToScheme(scheme))
+	
+	// Register metav1 types (required for InstallAPIGroup)
+	// This includes ListOptions, GetOptions, etc.
+	metav1.AddToGroupVersion(scheme, metav1.SchemeGroupVersion)
 }
 
 // ExtensionServer represents the extension API HTTP server
