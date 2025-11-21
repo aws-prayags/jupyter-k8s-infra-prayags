@@ -232,6 +232,7 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 
 	// Disable OpenAPI for simplicity (required for InstallAPIGroup)
 	// This prevents the "OpenAPIV3 config must not be nil" error
+	setupLog.Info("🔧 Disabling OpenAPI for minimal InstallAPIGroup implementation")
 	serverConfig.OpenAPIConfig = nil
 	serverConfig.OpenAPIV3Config = nil
 
@@ -241,12 +242,15 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 		return nil, fmt.Errorf("failed to create generic API server: %w", err)
 	}
 
+	setupLog.Info("✅ GenericAPIServer created successfully with OpenAPI disabled")
 	return genericServer, nil
 }
 
 // installDummyAPIGroup installs the dummy API group using InstallAPIGroup
 // This demonstrates how to use InstallAPIGroup alongside PathRecorderMux
 func installDummyAPIGroup(genericServer *genericapiserver.GenericAPIServer) error {
+	setupLog.Info("🚀 Installing dummy API group via InstallAPIGroup")
+
 	// Create storage
 	dummyStorage := storage.NewDummyStorage()
 
