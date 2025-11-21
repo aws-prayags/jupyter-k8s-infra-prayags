@@ -43,3 +43,12 @@ type DummyResourceStatus struct {
 	// LastUpdate is the timestamp of the last update
 	LastUpdate metav1.Time `json:"lastUpdate,omitempty"`
 }
+
+// +kubebuilder:object:root=true
+
+// DummyResourceList contains a list of DummyResource
+type DummyResourceList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []DummyResource `json:"items"`
+}

@@ -19,27 +19,45 @@ package storage
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	dummyv1alpha1 "github.com/jupyter-ai-contrib/jupyter-k8s/api/dummy/v1alpha1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/registry/rest"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// DummyStorage implements minimal REST storage for DummyResource
-// This is a demonstration of InstallAPIGroup with create-only operations
-type DummyStorage struct{}
+var storageLog = log.Log.WithName("dummy-storage")
 
-// Ensure DummyStorage implements required interfaces only
+// DummyStorage implements full CRUD REST storage for DummyResource
+// This is a demonstration of InstallAPIGroup with in-memory storage
+type DummyStorage struct {
+	mu    sync.RWMutex
+	items map[string]map[string]*dummyv1alpha1.DummyResource // namespace -> name -> resource
+}
+
+// Ensure DummyStorage implements required interfaces
 var _ rest.Storage = &DummyStorage{}
 var _ rest.Scoper = &DummyStorage{}
 var _ rest.GroupVersionKindProvider = &DummyStorage{}
+var _ rest.SingularNameProvider = &DummyStorage{}
 var _ rest.Creater = &DummyStorage{}
+var _ rest.Getter = &DummyStorage{}
+var _ rest.Lister = &DummyStorage{}
+var _ rest.Updater = &DummyStorage{}
+var _ rest.GracefulDeleter = &DummyStorage{}
+var _ rest.TableConvertor = &DummyStorage{}
 
 // NewDummyStorage creates a new DummyStorage
 func NewDummyStorage() *DummyStorage {
-	return &DummyStorage{}
+	storageLog.Info("💾 Creating new in-memory DummyStorage")
+	return &DummyStorage{
+		items: make(map[string]map[string]*dummyv1alpha1.DummyResource),
+	}
 }
 
 // ============ rest.Storage ============
@@ -68,10 +86,16 @@ func (s *DummyStorage) GroupVersionKind(containingGV schema.GroupVersion) schema
 	return dummyv1alpha1.SchemeGroupVersion.WithKind("DummyResource")
 }
 
+// ============ rest.SingularNameProvider ============
+
+// GetSingularName returns the singular name for the resource
+func (s *DummyStorage) GetSingularName() string {
+	return "dummyresource"
+}
+
 // ============ rest.Creater ============
 
 // Create handles POST requests to create a DummyResource
-// This is a minimal implementation that returns dummy data without actual storage
 func (s *DummyStorage) Create(
 	ctx context.Context,
 	obj runtime.Object,
@@ -83,16 +107,284 @@ func (s *DummyStorage) Create(
 		return nil, fmt.Errorf("invalid object type: expected DummyResource")
 	}
 
+	namespace := dummy.Namespace
+	if namespace == "" {
+		namespace = "default"
+	}
+
+	storageLog.Info("➕ CREATE request", "name", dummy.Name, "namespace", namespace, "message", dummy.Spec.Message)
+
 	// Run validation
 	if err := createValidation(ctx, obj); err != nil {
+		storageLog.Error(err, "❌ CREATE validation failed", "name", dummy.Name, "namespace", namespace)
 		return nil, err
 	}
 
-	// Set metadata and status - just return dummy data, no actual storage
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Check if already exists
+	if nsItems, ok := s.items[namespace]; ok {
+		if _, exists := nsItems[dummy.Name]; exists {
+			storageLog.Info("⚠️  CREATE failed: already exists", "name", dummy.Name, "namespace", namespace)
+			return nil, errors.NewAlreadyExists(
+				schema.GroupResource{Group: dummyv1alpha1.GroupName, Resource: "dummyresources"},
+				dummy.Name,
+			)
+		}
+	}
+
+	// Initialize namespace map if needed
+	if s.items[namespace] == nil {
+		s.items[namespace] = make(map[string]*dummyv1alpha1.DummyResource)
+	}
+
+	// Set metadata and status
 	now := metav1.Now()
 	dummy.CreationTimestamp = now
-	dummy.Status.Phase = "Created"
+	dummy.Status.Phase = "Active"
 	dummy.Status.LastUpdate = now
 
+	// Store
+	s.items[namespace][dummy.Name] = dummy.DeepCopy()
+
+	storageLog.Info("✅ CREATE successful", "name", dummy.Name, "namespace", namespace, "phase", dummy.Status.Phase)
 	return dummy, nil
+}
+
+// ============ rest.Getter ============
+
+// Get handles GET requests for a specific DummyResource
+func (s *DummyStorage) Get(
+	ctx context.Context,
+	name string,
+	options *metav1.GetOptions,
+) (runtime.Object, error) {
+	namespace := "default"
+	// Try to get namespace from context (set by API server)
+	if ns, ok := ctx.Value("namespace").(string); ok && ns != "" {
+		namespace = ns
+	}
+
+	storageLog.Info("🔍 GET request", "name", name, "namespace", namespace)
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	nsItems, ok := s.items[namespace]
+	if !ok {
+		storageLog.Info("❌ GET failed: not found (namespace empty)", "name", name, "namespace", namespace)
+		return nil, errors.NewNotFound(
+			schema.GroupResource{Group: dummyv1alpha1.GroupName, Resource: "dummyresources"},
+			name,
+		)
+	}
+
+	item, ok := nsItems[name]
+	if !ok {
+		storageLog.Info("❌ GET failed: not found", "name", name, "namespace", namespace)
+		return nil, errors.NewNotFound(
+			schema.GroupResource{Group: dummyv1alpha1.GroupName, Resource: "dummyresources"},
+			name,
+		)
+	}
+
+	storageLog.Info("✅ GET successful", "name", name, "namespace", namespace, "phase", item.Status.Phase)
+	return item.DeepCopy(), nil
+}
+
+// ============ rest.Lister ============
+
+// NewList returns a new empty list object
+func (s *DummyStorage) NewList() runtime.Object {
+	return &dummyv1alpha1.DummyResourceList{}
+}
+
+// List handles LIST requests for DummyResources
+func (s *DummyStorage) List(
+	ctx context.Context,
+	options *metainternalversion.ListOptions,
+) (runtime.Object, error) {
+	namespace := "default"
+	// Try to get namespace from context
+	if ns, ok := ctx.Value("namespace").(string); ok && ns != "" {
+		namespace = ns
+	}
+
+	storageLog.Info("📋 LIST request", "namespace", namespace)
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	list := &dummyv1alpha1.DummyResourceList{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: dummyv1alpha1.SchemeGroupVersion.String(),
+			Kind:       "DummyResourceList",
+		},
+		Items: []dummyv1alpha1.DummyResource{},
+	}
+
+	if nsItems, ok := s.items[namespace]; ok {
+		for _, item := range nsItems {
+			list.Items = append(list.Items, *item.DeepCopy())
+		}
+	}
+
+	storageLog.Info("✅ LIST successful", "namespace", namespace, "count", len(list.Items))
+	return list, nil
+}
+
+// ============ rest.Updater ============
+
+// Update handles PUT requests to update a DummyResource
+func (s *DummyStorage) Update(
+	ctx context.Context,
+	name string,
+	objInfo rest.UpdatedObjectInfo,
+	createValidation rest.ValidateObjectFunc,
+	updateValidation rest.ValidateObjectUpdateFunc,
+	forceAllowCreate bool,
+	options *metav1.UpdateOptions,
+) (runtime.Object, bool, error) {
+	namespace := "default"
+	if ns, ok := ctx.Value("namespace").(string); ok && ns != "" {
+		namespace = ns
+	}
+
+	storageLog.Info("✏️  UPDATE request", "name", name, "namespace", namespace)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Get existing object
+	nsItems, ok := s.items[namespace]
+	if !ok {
+		return nil, false, errors.NewNotFound(
+			schema.GroupResource{Group: dummyv1alpha1.GroupName, Resource: "dummyresources"},
+			name,
+		)
+	}
+
+	existing, ok := nsItems[name]
+	if !ok {
+		return nil, false, errors.NewNotFound(
+			schema.GroupResource{Group: dummyv1alpha1.GroupName, Resource: "dummyresources"},
+			name,
+		)
+	}
+
+	// Get updated object
+	updated, err := objInfo.UpdatedObject(ctx, existing)
+	if err != nil {
+		return nil, false, err
+	}
+
+	updatedDummy, ok := updated.(*dummyv1alpha1.DummyResource)
+	if !ok {
+		return nil, false, fmt.Errorf("invalid object type")
+	}
+
+	// Validate
+	if err := updateValidation(ctx, updatedDummy, existing); err != nil {
+		return nil, false, err
+	}
+
+	// Update status
+	updatedDummy.Status.LastUpdate = metav1.Now()
+
+	// Store
+	s.items[namespace][name] = updatedDummy.DeepCopy()
+
+	storageLog.Info("✅ UPDATE successful", "name", name, "namespace", namespace, "phase", updatedDummy.Status.Phase)
+	return updatedDummy, false, nil
+}
+
+// ============ rest.GracefulDeleter ============
+
+// Delete handles DELETE requests for a DummyResource
+func (s *DummyStorage) Delete(
+	ctx context.Context,
+	name string,
+	deleteValidation rest.ValidateObjectFunc,
+	options *metav1.DeleteOptions,
+) (runtime.Object, bool, error) {
+	namespace := "default"
+	if ns, ok := ctx.Value("namespace").(string); ok && ns != "" {
+		namespace = ns
+	}
+
+	storageLog.Info("🗑️  DELETE request", "name", name, "namespace", namespace)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	nsItems, ok := s.items[namespace]
+	if !ok {
+		return nil, false, errors.NewNotFound(
+			schema.GroupResource{Group: dummyv1alpha1.GroupName, Resource: "dummyresources"},
+			name,
+		)
+	}
+
+	item, ok := nsItems[name]
+	if !ok {
+		return nil, false, errors.NewNotFound(
+			schema.GroupResource{Group: dummyv1alpha1.GroupName, Resource: "dummyresources"},
+			name,
+		)
+	}
+
+	// Validate
+	if err := deleteValidation(ctx, item); err != nil {
+		return nil, false, err
+	}
+
+	// Delete
+	delete(nsItems, name)
+
+	storageLog.Info("✅ DELETE successful", "name", name, "namespace", namespace)
+	return item, true, nil
+}
+
+// ============ rest.TableConvertor ============
+
+// ConvertToTable converts objects to table format for kubectl output
+func (s *DummyStorage) ConvertToTable(ctx context.Context, object runtime.Object, tableOptions runtime.Object) (*metav1.Table, error) {
+	table := &metav1.Table{
+		ColumnDefinitions: []metav1.TableColumnDefinition{
+			{Name: "Name", Type: "string", Format: "name"},
+			{Name: "Message", Type: "string"},
+			{Name: "Phase", Type: "string"},
+			{Name: "Age", Type: "string"},
+		},
+	}
+
+	switch obj := object.(type) {
+	case *dummyv1alpha1.DummyResource:
+		table.Rows = append(table.Rows, metav1.TableRow{
+			Cells: []interface{}{
+				obj.Name,
+				obj.Spec.Message,
+				obj.Status.Phase,
+				obj.CreationTimestamp.Time,
+			},
+			Object: runtime.RawExtension{Object: obj},
+		})
+	case *dummyv1alpha1.DummyResourceList:
+		for _, item := range obj.Items {
+			table.Rows = append(table.Rows, metav1.TableRow{
+				Cells: []interface{}{
+					item.Name,
+					item.Spec.Message,
+					item.Status.Phase,
+					item.CreationTimestamp.Time,
+				},
+				Object: runtime.RawExtension{Object: &item},
+			})
+		}
+	default:
+		return nil, fmt.Errorf("unsupported object type for table conversion")
+	}
+
+	return table, nil
 }
