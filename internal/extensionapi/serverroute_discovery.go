@@ -47,7 +47,7 @@ func (s *ExtensionServer) handleV1Discovery(w http.ResponseWriter, r *http.Reque
 			"singularName": "workspaceconnection",
 			"namespaced": true,
 			"kind": "%s",
-			"verbs": ["create"]
+			"verbs": ["create", "list", "get"]
 		}, {
 			"name": "connectionaccessreviews",
 			"singularName": "connectionaccessreview",
@@ -88,7 +88,7 @@ func (s *ExtensionServer) handleV2Discovery(w http.ResponseWriter, r *http.Reque
 								},
 								"scope":            "Namespaced",
 								"singularResource": "workspaceconnection",
-								"verbs":            []string{"create"},
+								"verbs":            []string{"create", "list", "get"},
 								"shortNames":       []string{},
 								"categories":       []string{},
 							},
@@ -329,4 +329,92 @@ func (s *ExtensionServer) handleOpenAPIV3(w http.ResponseWriter, r *http.Request
 	setupLog.Info("Successfully returned OpenAPI v3 schema",
 		"schemaVersion", "3.0.0",
 		"resourceCount", 2)
+}
+
+// handleWorkspaceConnectionList returns an empty list
+func (s *ExtensionServer) handleWorkspaceConnectionList(w http.ResponseWriter, r *http.Request) {
+	setupLog.Info("List workspaceconnections called",
+		"path", r.URL.Path,
+		"method", r.Method,
+		"userAgent", r.Header.Get("User-Agent"))
+	
+	if r.Method != http.MethodGet {
+		setupLog.Info("Rejecting non-GET request", "method", r.Method)
+		WriteError(w, http.StatusMethodNotAllowed, "Only GET method is allowed")
+		return
+	}
+	
+	// Return empty list
+	response := map[string]interface{}{
+		"apiVersion": connectionv1alpha1.WorkspaceConnectionAPIVersion,
+		"kind":       "WorkspaceConnectionList",
+		"metadata": map[string]interface{}{
+			"resourceVersion": "0",
+		},
+		"items": []interface{}{},
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+	
+	setupLog.Info("Successfully returned empty workspaceconnections list")
+}
+
+// handleWorkspaceConnectionGet returns 404 for any name
+func (s *ExtensionServer) handleWorkspaceConnectionGet(w http.ResponseWriter, r *http.Request) {
+	// Extract name from path: /apis/.../namespaces/{ns}/workspaceconnections/{name}
+	parts := strings.Split(r.URL.Path, "/")
+	name := parts[len(parts)-1]
+	
+	setupLog.Info("Get workspaceconnection called",
+		"path", r.URL.Path,
+		"method", r.Method,
+		"name", name,
+		"userAgent", r.Header.Get("User-Agent"))
+	
+	if r.Method != http.MethodGet {
+		setupLog.Info("Rejecting non-GET request", "method", r.Method)
+		WriteError(w, http.StatusMethodNotAllowed, "Only GET method is allowed")
+		return
+	}
+	
+	// Return 404 for any name
+	setupLog.Info("Returning 404 for workspaceconnection", "name", name)
+	WriteError(w, http.StatusNotFound, fmt.Sprintf("workspaceconnection %q not found", name))
+}
+
+// handleWorkspaceConnectionRouter routes between list, get, and create operations
+func (s *ExtensionServer) handleWorkspaceConnectionRouter(w http.ResponseWriter, r *http.Request) {
+	// Check if it's a list operation (no name in path)
+	parts := strings.Split(r.URL.Path, "/")
+	lastPart := parts[len(parts)-1]
+	
+	setupLog.Info("Router called",
+		"path", r.URL.Path,
+		"method", r.Method,
+		"lastPart", lastPart)
+	
+	if lastPart == "workspaceconnections" {
+		// List or Create operation
+		if r.Method == http.MethodGet {
+			setupLog.Info("Routing to list handler")
+			s.handleWorkspaceConnectionList(w, r)
+		} else if r.Method == http.MethodPost {
+			setupLog.Info("Routing to create handler")
+			s.HandleConnectionCreate(w, r)
+		} else {
+			setupLog.Info("Unsupported method for collection", "method", r.Method)
+			WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		}
+	} else {
+		// Get operation (has name)
+		if r.Method == http.MethodGet {
+			setupLog.Info("Routing to get handler", "name", lastPart)
+			s.handleWorkspaceConnectionGet(w, r)
+		} else {
+			setupLog.Info("Unsupported method for resource", "method", r.Method, "name", lastPart)
+			WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		}
+	}
 }
