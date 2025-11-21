@@ -14,6 +14,7 @@ type DummyStorage struct{}
 // Ensure DummyStorage implements required interfaces
 var _ rest.Creater = &DummyStorage{}
 var _ rest.Scoper = &DummyStorage{}
+var _ rest.SingularNameProvider = &DummyStorage{}
 var _ rest.Storage = &DummyStorage{}
 
 // New returns a new DummyResource
@@ -29,6 +30,11 @@ func (d *DummyStorage) Destroy() {
 // NamespaceScoped returns true if the resource is namespaced
 func (d *DummyStorage) NamespaceScoped() bool {
 	return true
+}
+
+// GetSingularName returns the singular name of the resource
+func (d *DummyStorage) GetSingularName() string {
+	return "dummyresource"
 }
 
 // Create handles POST requests to create a DummyResource
