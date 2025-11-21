@@ -115,7 +115,12 @@ When enabled, OpenAPI gives you:
 
 ### Minimal OpenAPI Configuration (Required)
 
-**Important**: You cannot set `OpenAPIV3Config` to `nil` - `InstallAPIGroup` requires it to be non-nil. Instead, provide a minimal configuration with empty definitions:
+**Critical Requirements**:
+1. `OpenAPIV3Config` cannot be `nil`
+2. Must provide definitions for **all registered types**
+3. Cannot return empty map - `InstallAPIGroup` validates type definitions exist
+
+**Minimal working configuration**:
 
 ```go
 func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOptions) (*genericapiserver.GenericAPIServer, error) {
@@ -127,13 +132,23 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
     }
     
     // Configure minimal OpenAPI (required for InstallAPIGroup)
-    // InstallAPIGroup requires OpenAPIV3Config to be non-nil
-    emptyGetDefinitions := func(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
-        return map[string]common.OpenAPIDefinition{}
+    // Must provide definitions for all types registered via InstallAPIGroup
+    getDefinitions := func(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
+        return map[string]common.OpenAPIDefinition{
+            "github.com/your-org/your-api/v1alpha1.YourResource": {
+                Schema: spec.Schema{
+                    SchemaProps: spec.SchemaProps{
+                        Description: "YourResource description",
+                        Type:        []string{"object"},
+                    },
+                },
+            },
+            // Add definitions for all your types here
+        }
     }
     
     serverConfig.OpenAPIV3Config = genericapiserver.DefaultOpenAPIV3Config(
-        emptyGetDefinitions,
+        getDefinitions,
         openapi.NewDefinitionNamer(scheme),
     )
     serverConfig.OpenAPIV3Config.Info.Title = "Extension API"
@@ -153,8 +168,19 @@ Required imports:
 import (
     "k8s.io/apiserver/pkg/endpoints/openapi"
     "k8s.io/kube-openapi/pkg/common"
+    "k8s.io/kube-openapi/pkg/validation/spec"
 )
 ```
+
+**Common Errors**:
+
+1. **`OpenAPIV3 config must not be nil`**
+   - Cause: `OpenAPIV3Config` set to `nil`
+   - Fix: Provide non-nil config with `DefaultOpenAPIV3Config`
+
+2. **`cannot find model definition for <type>`**
+   - Cause: Type registered but not in OpenAPI definitions map
+   - Fix: Add entry for each type in `getDefinitions` function
 
 **What works with minimal config:**
 - ✅ API discovery (`kubectl api-resources`)
@@ -217,8 +243,9 @@ serverConfig.OpenAPIV3Config = genericapiserver.DefaultOpenAPIV3Config(
 ### Key Findings
 
 1. **OpenAPIV3Config cannot be nil** - `InstallAPIGroup` internally calls `getOpenAPIModels()` which requires non-nil config
-2. **Minimal config works** - Providing empty definitions satisfies the requirement without generating schemas
-3. **No true "disable"** - Unlike PathRecorderMux, you must provide OpenAPI config even if unused
+2. **Type definitions are mandatory** - Must provide OpenAPI definition for every type you register, cannot return empty map
+3. **No true "disable"** - Unlike PathRecorderMux, you must provide OpenAPI config with type definitions
+4. **Validation happens at startup** - `InstallAPIGroup` validates all type definitions exist during installation, not at runtime
 
 ### Recommendation
 

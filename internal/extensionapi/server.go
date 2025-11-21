@@ -24,6 +24,7 @@ import (
 	genericoptions "k8s.io/apiserver/pkg/server/options"
 	"k8s.io/apiserver/pkg/util/compatibility"
 	"k8s.io/kube-openapi/pkg/common"
+	"k8s.io/kube-openapi/pkg/validation/spec"
 	"k8s.io/client-go/kubernetes"
 	v1 "k8s.io/client-go/kubernetes/typed/authorization/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -233,16 +234,25 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 	}
 
 	// Configure minimal OpenAPI (required for InstallAPIGroup)
-	// InstallAPIGroup requires OpenAPIV3Config to be non-nil, even if we don't use it
+	// InstallAPIGroup requires OpenAPIV3Config and type definitions
 	setupLog.Info("🔧 Configuring minimal OpenAPI for InstallAPIGroup compatibility")
 	
-	// Create a minimal OpenAPI config that returns empty definitions
-	emptyGetDefinitions := func(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
-		return map[string]common.OpenAPIDefinition{}
+	// Provide minimal OpenAPI definitions for our types
+	getDefinitions := func(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
+		return map[string]common.OpenAPIDefinition{
+			"github.com/jupyter-ai-contrib/jupyter-k8s/api/dummy/v1alpha1.DummyResource": {
+				Schema: spec.Schema{
+					SchemaProps: spec.SchemaProps{
+						Description: "DummyResource is a minimal demo resource",
+						Type:        []string{"object"},
+					},
+				},
+			},
+		}
 	}
 	
 	serverConfig.OpenAPIV3Config = genericapiserver.DefaultOpenAPIV3Config(
-		emptyGetDefinitions,
+		getDefinitions,
 		openapi.NewDefinitionNamer(scheme),
 	)
 	serverConfig.OpenAPIV3Config.Info.Title = "Extension API"
