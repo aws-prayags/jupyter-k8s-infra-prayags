@@ -123,3 +123,210 @@ func (s *ExtensionServer) handleV2Discovery(w http.ResponseWriter, r *http.Reque
 	
 	setupLog.Info("Successfully returned v2 discovery response")
 }
+
+// handleOpenAPIV3 returns OpenAPI v3 schema for the API group
+func (s *ExtensionServer) handleOpenAPIV3(w http.ResponseWriter, r *http.Request) {
+	setupLog.Info("OpenAPI v3 endpoint called",
+		"path", r.URL.Path,
+		"method", r.Method,
+		"accept", r.Header.Get("Accept"),
+		"userAgent", r.Header.Get("User-Agent"))
+	
+	schema := map[string]interface{}{
+		"openapi": "3.0.0",
+		"info": map[string]interface{}{
+			"title":   "connection.workspace.jupyter.org",
+			"version": "v1alpha1",
+		},
+		"paths": map[string]interface{}{
+			"/apis/connection.workspace.jupyter.org/v1alpha1/namespaces/{namespace}/workspaceconnections": {
+				"post": map[string]interface{}{
+					"description": "Create a WorkspaceConnection",
+					"parameters": []map[string]interface{}{
+						{
+							"name":     "namespace",
+							"in":       "path",
+							"required": true,
+							"schema":   map[string]string{"type": "string"},
+						},
+					},
+					"requestBody": map[string]interface{}{
+						"required": true,
+						"content": map[string]interface{}{
+							"application/json": map[string]interface{}{
+								"schema": map[string]interface{}{
+									"$ref": "#/components/schemas/connection.workspace.jupyter.org.v1alpha1.WorkspaceConnection",
+								},
+							},
+						},
+					},
+					"responses": map[string]interface{}{
+						"200": map[string]interface{}{
+							"description": "OK",
+							"content": map[string]interface{}{
+								"application/json": map[string]interface{}{
+									"schema": map[string]interface{}{
+										"$ref": "#/components/schemas/connection.workspace.jupyter.org.v1alpha1.WorkspaceConnection",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			"/apis/connection.workspace.jupyter.org/v1alpha1/namespaces/{namespace}/connectionaccessreviews": {
+				"post": map[string]interface{}{
+					"description": "Create a ConnectionAccessReview",
+					"parameters": []map[string]interface{}{
+						{
+							"name":     "namespace",
+							"in":       "path",
+							"required": true,
+							"schema":   map[string]string{"type": "string"},
+						},
+					},
+					"requestBody": map[string]interface{}{
+						"required": true,
+						"content": map[string]interface{}{
+							"application/json": map[string]interface{}{
+								"schema": map[string]interface{}{
+									"$ref": "#/components/schemas/connection.workspace.jupyter.org.v1alpha1.ConnectionAccessReview",
+								},
+							},
+						},
+					},
+					"responses": map[string]interface{}{
+						"200": map[string]interface{}{
+							"description": "OK",
+							"content": map[string]interface{}{
+								"application/json": map[string]interface{}{
+									"schema": map[string]interface{}{
+										"$ref": "#/components/schemas/connection.workspace.jupyter.org.v1alpha1.ConnectionAccessReview",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"components": map[string]interface{}{
+			"schemas": map[string]interface{}{
+				"connection.workspace.jupyter.org.v1alpha1.WorkspaceConnection": {
+					"type":     "object",
+					"required": []string{"apiVersion", "kind", "metadata", "spec"},
+					"properties": map[string]interface{}{
+						"apiVersion": map[string]string{
+							"type":        "string",
+							"description": "APIVersion defines the versioned schema of this representation",
+						},
+						"kind": map[string]string{
+							"type":        "string",
+							"description": "Kind is a string value representing the REST resource",
+						},
+						"metadata": map[string]interface{}{
+							"type":        "object",
+							"description": "Standard object metadata",
+						},
+						"spec": map[string]interface{}{
+							"type":        "object",
+							"description": "Specification of the desired behavior",
+							"required":    []string{"workspaceName", "connectionType"},
+							"properties": map[string]interface{}{
+								"workspaceName": map[string]string{
+									"type":        "string",
+									"description": "Name of the workspace",
+								},
+								"connectionType": map[string]string{
+									"type":        "string",
+									"description": "Type of connection",
+								},
+								"connectionDetails": map[string]interface{}{
+									"type":        "object",
+									"description": "Connection details",
+									"additionalProperties": map[string]string{
+										"type": "string",
+									},
+								},
+							},
+						},
+						"status": map[string]interface{}{
+							"type":        "object",
+							"description": "Most recently observed status",
+						},
+					},
+					"x-kubernetes-group-version-kind": []map[string]string{
+						{
+							"group":   "connection.workspace.jupyter.org",
+							"kind":    "WorkspaceConnection",
+							"version": "v1alpha1",
+						},
+					},
+				},
+				"connection.workspace.jupyter.org.v1alpha1.ConnectionAccessReview": {
+					"type":     "object",
+					"required": []string{"apiVersion", "kind", "spec"},
+					"properties": map[string]interface{}{
+						"apiVersion": map[string]string{
+							"type":        "string",
+							"description": "APIVersion defines the versioned schema",
+						},
+						"kind": map[string]string{
+							"type":        "string",
+							"description": "Kind is a string value representing the REST resource",
+						},
+						"spec": map[string]interface{}{
+							"type":        "object",
+							"description": "Specification of the access review request",
+							"required":    []string{"workspaceName", "user"},
+							"properties": map[string]interface{}{
+								"workspaceName": map[string]string{
+									"type":        "string",
+									"description": "Name of the workspace",
+								},
+								"user": map[string]string{
+									"type":        "string",
+									"description": "User requesting access",
+								},
+							},
+						},
+						"status": map[string]interface{}{
+							"type":        "object",
+							"description": "Result of the access review",
+							"properties": map[string]interface{}{
+								"allowed": map[string]interface{}{
+									"type":        "boolean",
+									"description": "Whether access is allowed",
+								},
+								"reason": map[string]string{
+									"type":        "string",
+									"description": "Reason for the decision",
+								},
+							},
+						},
+					},
+					"x-kubernetes-group-version-kind": []map[string]string{
+						{
+							"group":   "connection.workspace.jupyter.org",
+							"kind":    "ConnectionAccessReview",
+							"version": "v1alpha1",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	
+	if err := json.NewEncoder(w).Encode(schema); err != nil {
+		setupLog.Error(err, "Failed to encode OpenAPI v3 response")
+		WriteError(w, http.StatusInternalServerError, "failed to write OpenAPI v3 schema")
+		return
+	}
+	
+	setupLog.Info("Successfully returned OpenAPI v3 schema",
+		"schemaVersion", "3.0.0",
+		"resourceCount", 2)
+}

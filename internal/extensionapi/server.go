@@ -157,9 +157,16 @@ func (s *ExtensionServer) registerNamespacedRoutes(resourceHandlers map[string]f
 func (s *ExtensionServer) registerAllRoutes() {
 	// Register health check route
 	s.registerRoute("/health", s.handleHealth)
+	setupLog.Info("Registered route", "path", "/health")
 
 	// Register API discovery route
 	s.registerRoute(s.config.ApiPath, s.handleDiscovery)
+	setupLog.Info("Registered route", "path", s.config.ApiPath, "handler", "discovery")
+
+	// Register OpenAPI v3 schema endpoint
+	openapiPath := "/openapi/v3/apis/connection.workspace.jupyter.org/v1alpha1"
+	s.registerRoute(openapiPath, s.handleOpenAPIV3)
+	setupLog.Info("Registered route", "path", openapiPath, "handler", "openapi-v3")
 
 	// Register all namespaced routes
 	s.registerNamespacedRoutes(map[string]func(http.ResponseWriter, *http.Request){
