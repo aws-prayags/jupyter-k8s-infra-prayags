@@ -319,3 +319,123 @@ func (s *ExtensionServer) renderBearerAuthURL(templateStr string, ws *workspacev
 
 	return result.String(), nil
 }
+
+// generateVSCodeURLInternal generates VSCode URL without requiring http.Request
+// This is used by the storage layer
+func (s *ExtensionServer) generateVSCodeURLInternal(ctx context.Context, workspaceName, namespace string) (string, string, error) {
+	logger := ctrl.Log.WithName("vscode-handler")
+
+	// Get cluster ID from config
+	clusterId := s.config.ClusterId
+	if clusterId == "" {
+		return "", "", fmt.Errorf("CLUSTER_ID not configured")
+	}
+
+	// Get workspace
+	ws, err := s.getWorkspace(namespace, workspaceName)
+	if err != nil {
+		logger.Error(err, "Failed to get workspace", "workspaceName", workspaceName)
+		return "", "", err
+	}
+
+	// Get access strategy
+	accessStrategy, err := s.getAccessStrategy(ws)
+	if err != nil {
+		logger.Error(err, "Failed to get access strategy", "workspaceName", workspaceName)
+		return "", "", err
+	}
+
+	if accessStrategy == nil {
+		return "", "", fmt.Errorf("no access strategy configured for workspace")
+	}
+
+	// Get pod UID from workspace name
+	podUID, err := workspace.GetPodUIDFromWorkspaceName(s.k8sClient, workspaceName)
+	if err != nil {
+		logger.Error(err, "Failed to get pod UID", "workspaceName", workspaceName)
+		return "", "", err
+	}
+
+	logger.Info("Found pod UID for workspace", "workspaceName", workspaceName, "podUID", podUID)
+
+	// Create SSM remote access strategy
+	ssmStrategy, err := newSSMRemoteAccessStrategy(nil, &noOpPodExec{})
+	if err != nil {
+		return "", "", err
+	}
+
+	// Generate VSCode connection URL
+	connectionURL, err := ssmStrategy.GenerateVSCodeConnectionURL(ctx, workspaceName, namespace, podUID, clusterId, accessStrategy)
+	if err != nil {
+		return "", "", err
+	}
+
+	return connectionv1alpha1.ConnectionTypeVSCodeRemote, connectionURL, nil
+}
+
+// generateWebUIURLInternal generates WebUI URL without requiring http.Request
+// This is used by the storage layer
+func (s *ExtensionServer) generateWebUIURLInternal(ctx context.Context, workspaceName, namespace, user string) (string, string, error) {
+	if user == "" {
+		return "", "", fmt.Errorf("user information required")
+	}
+
+	// Get workspace and access strategy
+	ws, err := s.getWorkspace(namespace, workspaceName)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get workspace: %w", err)
+	}
+
+	accessStrategy, err := s.getAccessStrategy(ws)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get access strategy: %w", err)
+	}
+
+	// Require AccessStrategy with BearerAuthURLTemplate
+	if accessStrategy == nil {
+		return "", "", fmt.Errorf("no AccessStrategy configured for workspace")
+	}
+	if accessStrategy.Spec.BearerAuthURLTemplate == "" {
+		return "", "", fmt.Errorf("BearerAuthURLTemplate not configured in AccessStrategy")
+	}
+
+	// Create signer based on access strategy
+	signer, err := s.signerFactory.CreateSigner(accessStrategy)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create signer: %w", err)
+	}
+
+	// Generate URL from template
+	webUIURL, err := s.renderBearerAuthURL(accessStrategy.Spec.BearerAuthURLTemplate, ws, accessStrategy)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to render bearer auth URL: %w", err)
+	}
+
+	// Parse URL to extract domain and path for JWT claims
+	parsedURL, err := url.Parse(webUIURL)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse generated URL: %w", err)
+	}
+
+	domain := parsedURL.Host
+	path := parsedURL.Path
+
+	// Strip /bearer-auth from the end if present
+	if strings.HasSuffix(path, "/bearer-auth") {
+		path = strings.TrimSuffix(path, "/bearer-auth")
+		if path == "" {
+			path = "/"
+		}
+	}
+
+	// Generate JWT token
+	token, err := signer.GenerateToken(user, []string{}, user, map[string][]string{}, path, domain, jwt.TokenTypeBootstrap)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to generate JWT token: %w", err)
+	}
+
+	// Add token to URL
+	finalURL := fmt.Sprintf("%s?token=%s", webUIURL, token)
+
+	return connectionv1alpha1.ConnectionTypeWebUI, finalURL, nil
+}

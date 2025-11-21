@@ -45,6 +45,8 @@ func init() {
 		schema.GroupVersion{Group: "connection.workspace.jupyter.org", Version: "v1alpha1"},
 		&DummyResource{},
 		&DummyResourceList{},
+		&connectionv1alpha1.WorkspaceConnection{},
+		&connectionv1alpha1.WorkspaceConnectionList{},
 		&connectionv1alpha1.WorkspaceConnectionRequest{},
 		&connectionv1alpha1.WorkspaceConnectionResponse{},
 	)
@@ -231,7 +233,7 @@ func createRecommendedOptions(config *ExtensionConfig) *genericoptions.Recommend
 }
 
 // createGenericAPIServer creates a GenericAPIServer from options
-func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOptions) (*genericapiserver.GenericAPIServer, error) {
+func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOptions, server *ExtensionServer) (*genericapiserver.GenericAPIServer, error) {
 	// Create server config
 	serverConfig := genericapiserver.NewRecommendedConfig(codecs)
 	serverConfig.EffectiveVersion = compatibility.DefaultBuildEffectiveVersion()
@@ -260,7 +262,7 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 	}
 
 	// Install dummy API group to test GenericAPIServer integration
-	if err := installDummyAPIGroup(genericServer); err != nil {
+	if err := installDummyAPIGroup(genericServer, server); err != nil {
 		return nil, fmt.Errorf("failed to install dummy API group: %w", err)
 	}
 
@@ -268,7 +270,7 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 }
 
 // installDummyAPIGroup installs a minimal dummy resource for testing
-func installDummyAPIGroup(genericServer *genericapiserver.GenericAPIServer) error {
+func installDummyAPIGroup(genericServer *genericapiserver.GenericAPIServer, server *ExtensionServer) error {
 	apiGroupInfo := genericapiserver.NewDefaultAPIGroupInfo(
 		"connection.workspace.jupyter.org",
 		scheme,
@@ -284,7 +286,7 @@ func installDummyAPIGroup(genericServer *genericapiserver.GenericAPIServer) erro
 	// Register resource storage
 	v1alpha1Storage := map[string]rest.Storage{}
 	v1alpha1Storage["dummyresources"] = &DummyStorage{}
-	v1alpha1Storage["workspaceconnections"] = &WorkspaceConnectionStorage{server: nil} // server will be set later if needed
+	v1alpha1Storage["workspaceconnections"] = &WorkspaceConnectionStorage{server: server}
 	apiGroupInfo.VersionedResourcesStorageMap["v1alpha1"] = v1alpha1Storage
 
 	// Install the API group
@@ -322,6 +324,47 @@ func getDummyResourceOpenAPIDefinitions(ref openapicommon.ReferenceCallback) map
 							SchemaProps: spec.SchemaProps{
 								Type:   []string{"object"},
 								Format: "",
+							},
+						},
+					},
+				},
+			},
+		},
+		"github.com/jupyter-ai-contrib/jupyter-k8s/api/connection/v1alpha1.WorkspaceConnection": {
+			Schema: spec.Schema{
+				SchemaProps: spec.SchemaProps{
+					Type: []string{"object"},
+					Properties: map[string]spec.Schema{
+						"apiVersion": {
+							SchemaProps: spec.SchemaProps{
+								Type: []string{"string"},
+							},
+						},
+						"kind": {
+							SchemaProps: spec.SchemaProps{
+								Type: []string{"string"},
+							},
+						},
+						"metadata": {
+							SchemaProps: spec.SchemaProps{
+								Type: []string{"object"},
+							},
+						},
+						"spec": {
+							SchemaProps: spec.SchemaProps{
+								Type: []string{"object"},
+								Properties: map[string]spec.Schema{
+									"workspaceName": {
+										SchemaProps: spec.SchemaProps{
+											Type: []string{"string"},
+										},
+									},
+									"workspaceConnectionType": {
+										SchemaProps: spec.SchemaProps{
+											Type: []string{"string"},
+										},
+									},
+								},
 							},
 						},
 					},
@@ -421,15 +464,27 @@ func SetupExtensionAPIServerWithManager(mgr ctrl.Manager, config *ExtensionConfi
 		return err
 	}
 
-	// Create GenericAPIServer
+	// Create a placeholder server first (without genericServer)
+	server := &ExtensionServer{
+		config:        config,
+		logger:        &logger,
+		k8sClient:     mgr.GetClient(),
+		sarClient:     sarClient,
+		signerFactory: signerFactory,
+		routes:        make(map[string]func(http.ResponseWriter, *http.Request)),
+	}
+
+	// Create GenericAPIServer with the server reference
 	recommendedOptions := createRecommendedOptions(config)
-	genericServer, err := createGenericAPIServer(recommendedOptions)
+	genericServer, err := createGenericAPIServer(recommendedOptions, server)
 	if err != nil {
 		return err
 	}
 
-	// Create and configure extension server
-	server := createExtensionServer(genericServer, config, &logger, mgr.GetClient(), sarClient, signerFactory)
+	// Complete the server setup
+	server.genericServer = genericServer
+	server.mux = genericServer.Handler.NonGoRestfulMux
+	server.registerAllRoutes()
 
 	// Add server to manager
 	return addServerToManager(mgr, server)

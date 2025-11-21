@@ -55,6 +55,25 @@ type WorkspaceConnectionRequest struct {
 
 // +kubebuilder:object:root=true
 
+// WorkspaceConnection is an alias for WorkspaceConnectionRequest to support the "WorkspaceConnection" kind
+// This maintains backward compatibility with existing kubectl commands
+type WorkspaceConnection struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              WorkspaceConnectionRequestSpec `json:"spec"`
+}
+
+// +kubebuilder:object:root=true
+
+// WorkspaceConnectionList contains a list of WorkspaceConnection
+type WorkspaceConnectionList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []WorkspaceConnection `json:"items"`
+}
+
+// +kubebuilder:object:root=true
+
 // WorkspaceConnectionResponse represents the response for a workspace connection
 type WorkspaceConnectionResponse struct {
 	metav1.TypeMeta   `json:",inline"`
