@@ -22,9 +22,12 @@ import (
 	"k8s.io/apiserver/pkg/registry/rest"
 	"k8s.io/client-go/kubernetes"
 	v1 "k8s.io/client-go/kubernetes/typed/authorization/v1"
+	"k8s.io/kube-openapi/pkg/common"
+	"k8s.io/kube-openapi/pkg/validation/spec"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"k8s.io/apiserver/pkg/endpoints/openapi"
 )
 
 var (
@@ -233,6 +236,15 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 		return nil, fmt.Errorf("failed to apply recommended options: %w", err)
 	}
 
+	// Configure OpenAPI
+	serverConfig.OpenAPIConfig = genericapiserver.DefaultOpenAPIConfig(getOpenAPIDefinitions, openapi.NewDefinitionNamer(scheme))
+	serverConfig.OpenAPIConfig.Info.Title = "Jupyter K8s Extension API"
+	serverConfig.OpenAPIConfig.Info.Version = "v1alpha1"
+
+	serverConfig.OpenAPIV3Config = genericapiserver.DefaultOpenAPIV3Config(getOpenAPIDefinitions, openapi.NewDefinitionNamer(scheme))
+	serverConfig.OpenAPIV3Config.Info.Title = "Jupyter K8s Extension API"
+	serverConfig.OpenAPIV3Config.Info.Version = "v1alpha1"
+
 	// Create GenericAPIServer
 	genericServer, err := serverConfig.Complete().New("extension-apiserver", genericapiserver.NewEmptyDelegate())
 	if err != nil {
@@ -240,6 +252,117 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 	}
 
 	return genericServer, nil
+}
+
+// getOpenAPIDefinitions returns OpenAPI definitions for our API types
+func getOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
+	return map[string]common.OpenAPIDefinition{
+		"github.com/jupyter-ai-contrib/jupyter-k8s/api/connection/v1alpha1.WorkspaceConnectionRequest": {
+			Schema: spec.Schema{
+				SchemaProps: spec.SchemaProps{
+					Description: "WorkspaceConnectionRequest represents a request to create a workspace connection",
+					Type:        []string{"object"},
+					Properties: map[string]spec.Schema{
+						"apiVersion": {
+							SchemaProps: spec.SchemaProps{
+								Type:   []string{"string"},
+								Format: "",
+							},
+						},
+						"kind": {
+							SchemaProps: spec.SchemaProps{
+								Type:   []string{"string"},
+								Format: "",
+							},
+						},
+						"metadata": {
+							SchemaProps: spec.SchemaProps{
+								Ref: ref("k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"),
+							},
+						},
+						"spec": {
+							SchemaProps: spec.SchemaProps{
+								Type: []string{"object"},
+								Properties: map[string]spec.Schema{
+									"workspaceName": {
+										SchemaProps: spec.SchemaProps{
+											Type: []string{"string"},
+										},
+									},
+									"workspaceConnectionType": {
+										SchemaProps: spec.SchemaProps{
+											Type: []string{"string"},
+										},
+									},
+								},
+								Required: []string{"workspaceName", "workspaceConnectionType"},
+							},
+						},
+					},
+					Required: []string{"spec"},
+				},
+			},
+		},
+		"github.com/jupyter-ai-contrib/jupyter-k8s/api/connection/v1alpha1.WorkspaceConnectionResponse": {
+			Schema: spec.Schema{
+				SchemaProps: spec.SchemaProps{
+					Description: "WorkspaceConnectionResponse represents a workspace connection response",
+					Type:        []string{"object"},
+					Properties: map[string]spec.Schema{
+						"apiVersion": {
+							SchemaProps: spec.SchemaProps{
+								Type: []string{"string"},
+							},
+						},
+						"kind": {
+							SchemaProps: spec.SchemaProps{
+								Type: []string{"string"},
+							},
+						},
+						"metadata": {
+							SchemaProps: spec.SchemaProps{
+								Ref: ref("k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"),
+							},
+						},
+						"spec": {
+							SchemaProps: spec.SchemaProps{
+								Type: []string{"object"},
+								Properties: map[string]spec.Schema{
+									"workspaceName": {
+										SchemaProps: spec.SchemaProps{
+											Type: []string{"string"},
+										},
+									},
+									"workspaceConnectionType": {
+										SchemaProps: spec.SchemaProps{
+											Type: []string{"string"},
+										},
+									},
+								},
+							},
+						},
+						"status": {
+							SchemaProps: spec.SchemaProps{
+								Type: []string{"object"},
+								Properties: map[string]spec.Schema{
+									"workspaceConnectionType": {
+										SchemaProps: spec.SchemaProps{
+											Type: []string{"string"},
+										},
+									},
+									"workspaceConnectionUrl": {
+										SchemaProps: spec.SchemaProps{
+											Type: []string{"string"},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 }
 
 // installConnectionAPI installs the connection API group using InstallAPIGroup
