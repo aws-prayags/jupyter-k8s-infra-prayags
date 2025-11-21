@@ -589,7 +589,15 @@ var _ = Describe("Server", func() {
 				options := genericoptions.NewRecommendedOptions("/unused", nil)
 				options.SecureServing.BindPort = 0 // Use any available port
 
-				_, err := createGenericAPIServer(options)
+				// Create a minimal server for testing
+				logger := logr.Discard()
+				testServer := &ExtensionServer{
+					config:        NewConfig(),
+					logger:        &logger,
+					routes:        make(map[string]func(http.ResponseWriter, *http.Request)),
+				}
+
+				_, err := createGenericAPIServer(options, testServer)
 
 				// Expected to fail without proper setup, but we tested the code path
 				Expect(err).To(HaveOccurred())
