@@ -209,7 +209,7 @@ func createSARClient(mgr ctrl.Manager) (v1.SubjectAccessReviewInterface, error) 
 func createRecommendedOptions(config *ExtensionConfig) *genericoptions.RecommendedOptions {
 	recommendedOptions := genericoptions.NewRecommendedOptions(
 		"/unused",
-		codecs, // Pass codecs for proper serialization
+		codecs.LegacyCodec(connectionv1alpha1.SchemeGroupVersion), // Get a Codec from CodecFactory
 	)
 
 	// Configure port and certificates
