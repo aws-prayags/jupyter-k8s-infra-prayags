@@ -15,6 +15,7 @@ import (
 	"github.com/jupyter-ai-contrib/jupyter-k8s/internal/jwt"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apiserver/pkg/endpoints/openapi"
@@ -35,16 +36,19 @@ import (
 var (
 	setupLog = log.Log.WithName("extension-api-server")
 	scheme   = runtime.NewScheme()
-	codecs   = serializer.NewCodecFactory(scheme)
+	codecs   serializer.CodecFactory
 )
 
 func init() {
+	// Register metav1 types first (required for InstallAPIGroup)
+	// This includes ListOptions, GetOptions, CreateOptions, etc.
+	metav1.AddToGroupVersion(scheme, schema.GroupVersion{Version: "v1"})
+	
 	// Register dummy API types for InstallAPIGroup
 	utilruntime.Must(dummyv1alpha1.AddToScheme(scheme))
 	
-	// Register metav1 types (required for InstallAPIGroup)
-	// This includes ListOptions, GetOptions, etc.
-	metav1.AddToGroupVersion(scheme, metav1.SchemeGroupVersion)
+	// Create codec factory after all types are registered
+	codecs = serializer.NewCodecFactory(scheme)
 }
 
 // ExtensionServer represents the extension API HTTP server
@@ -268,7 +272,7 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 		return nil, fmt.Errorf("failed to create generic API server: %w", err)
 	}
 
-	setupLog.Info("✅ GenericAPIServer created successfully with OpenAPI disabled")
+	setupLog.Info("✅ GenericAPIServer created successfully with minimal OpenAPI config")
 	return genericServer, nil
 }
 
@@ -295,11 +299,12 @@ func installDummyAPIGroup(genericServer *genericapiserver.GenericAPIServer) erro
 	apiGroupInfo.VersionedResourcesStorageMap["v1alpha1"] = v1alpha1Storage
 
 	// Install API group
+	setupLog.Info("📦 Registering metav1 types and installing API group...")
 	if err := genericServer.InstallAPIGroup(&apiGroupInfo); err != nil {
 		return fmt.Errorf("failed to install dummy API group: %w", err)
 	}
 
-	setupLog.Info("Installed dummy API group", "group", dummyv1alpha1.GroupName, "version", "v1alpha1")
+	setupLog.Info("🎉 Successfully installed dummy API group!", "group", dummyv1alpha1.GroupName, "version", "v1alpha1")
 	return nil
 }
 
