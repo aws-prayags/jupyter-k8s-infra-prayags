@@ -12,10 +12,15 @@ import (
 	"github.com/jupyter-ai-contrib/jupyter-k8s/internal/aws"
 	"github.com/jupyter-ai-contrib/jupyter-k8s/internal/jwt"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/apiserver/pkg/server/mux"
 	genericoptions "k8s.io/apiserver/pkg/server/options"
+	"k8s.io/apiserver/pkg/registry/rest"
+	openapicommon "k8s.io/kube-openapi/pkg/common"
+	spec "k8s.io/kube-openapi/pkg/validation/spec"
 	"k8s.io/apiserver/pkg/util/compatibility"
 	"k8s.io/client-go/kubernetes"
 	v1 "k8s.io/client-go/kubernetes/typed/authorization/v1"
@@ -29,6 +34,19 @@ var (
 	scheme   = runtime.NewScheme()
 	codecs   = serializer.NewCodecFactory(scheme)
 )
+
+func init() {
+	// Register standard Kubernetes types
+	metav1.AddToGroupVersion(scheme, schema.GroupVersion{Version: "v1"})
+	
+	// Register workspace connection types
+	scheme.AddKnownTypes(
+		schema.GroupVersion{Group: "connection.workspace.jupyter.org", Version: "v1alpha1"},
+		&WorkspaceConnection{},
+		&WorkspaceConnectionResponse{},
+	)
+	metav1.AddToGroupVersion(scheme, schema.GroupVersion{Group: "connection.workspace.jupyter.org", Version: "v1alpha1"})
+}
 
 // ExtensionServer represents the extension API HTTP server
 type ExtensionServer struct {
@@ -158,13 +176,30 @@ func (s *ExtensionServer) registerAllRoutes() {
 	// Register health check route
 	s.registerRoute("/health", s.handleHealth)
 
-	// Register API discovery route
+	// Register API discovery routes
+	s.registerRoute("/apis", s.handleAPIs)
+	setupLog.Info("Registered discovery route", "path", "/apis")
+	
+	s.registerRoute("/apis/connection.workspace.jupyter.org", s.handleAPIGroup)
+	setupLog.Info("Registered API group route", "path", "/apis/connection.workspace.jupyter.org")
+	
 	s.registerRoute(s.config.ApiPath, s.handleDiscovery)
+	setupLog.Info("Registered API version route", "path", s.config.ApiPath)
+
+	// Register OpenAPI endpoints for aggregation layer
+	s.registerRoute("/openapi/v2", s.handleOpenAPIv2)
+	setupLog.Info("Registered OpenAPI v2 route", "path", "/openapi/v2")
+	
+	s.registerRoute("/openapi/v3", s.handleOpenAPIv3Discovery)
+	setupLog.Info("Registered OpenAPI v3 route", "path", "/openapi/v3")
+	
+	s.registerRoute("/openapi/v3/apis/connection.workspace.jupyter.org/v1alpha1", s.handleOpenAPIv3Spec)
+	setupLog.Info("Registered OpenAPI v3 group route", "path", "/openapi/v3/apis/connection.workspace.jupyter.org/v1alpha1")
 
 	// Register all namespaced routes
 	s.registerNamespacedRoutes(map[string]func(http.ResponseWriter, *http.Request){
-		"workspaceconnections":   s.HandleConnectionCreate,
-		"connectionaccessreview": s.handleConnectionAccessReview,
+		"workspaceconnections":    s.handleWorkspaceConnectionsCRUD,
+		"connectionaccessreviews": s.handleConnectionAccessReview,
 	})
 }
 
@@ -220,6 +255,17 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 		return nil, fmt.Errorf("failed to apply recommended options: %w", err)
 	}
 
+	// Configure OpenAPI - required for InstallAPIGroup
+	serverConfig.OpenAPIV3Config = &openapicommon.OpenAPIV3Config{
+		Info: &spec.Info{
+			InfoProps: spec.InfoProps{
+				Title:   "Extension API Server",
+				Version: "v1alpha1",
+			},
+		},
+		GetDefinitions: getWorkspaceConnectionOpenAPIDefinitions,
+	}
+
 	// Create GenericAPIServer
 	genericServer, err := serverConfig.Complete().New("extension-apiserver", genericapiserver.NewEmptyDelegate())
 	if err != nil {
@@ -227,6 +273,53 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 	}
 
 	return genericServer, nil
+}
+
+// installWorkspaceConnectionAPIGroup installs the workspace connection API group
+func installWorkspaceConnectionAPIGroup(genericServer *genericapiserver.GenericAPIServer, extensionServer *ExtensionServer) error {
+	apiGroupInfo := genericapiserver.NewDefaultAPIGroupInfo(
+		"connection.workspace.jupyter.org",
+		scheme,
+		runtime.NewParameterCodec(scheme),
+		codecs,
+	)
+	
+	apiGroupInfo.PrioritizedVersions = []schema.GroupVersion{
+		{Group: "connection.workspace.jupyter.org", Version: "v1alpha1"},
+	}
+	
+	v1alpha1Storage := map[string]rest.Storage{}
+	v1alpha1Storage["workspaceconnections"] = &WorkspaceConnectionStorage{server: extensionServer}
+	apiGroupInfo.VersionedResourcesStorageMap["v1alpha1"] = v1alpha1Storage
+	
+	return genericServer.InstallAPIGroup(&apiGroupInfo)
+}
+
+// getWorkspaceConnectionOpenAPIDefinitions provides OpenAPI definitions for WorkspaceConnection
+func getWorkspaceConnectionOpenAPIDefinitions(ref openapicommon.ReferenceCallback) map[string]openapicommon.OpenAPIDefinition {
+	return map[string]openapicommon.OpenAPIDefinition{
+		"github.com/jupyter-ai-contrib/jupyter-k8s/internal/extensionapi.WorkspaceConnection": {
+			Schema: spec.Schema{
+				SchemaProps: spec.SchemaProps{
+					Type: []string{"object"},
+					Properties: map[string]spec.Schema{
+						"apiVersion": {SchemaProps: spec.SchemaProps{Type: []string{"string"}}},
+						"kind": {SchemaProps: spec.SchemaProps{Type: []string{"string"}}},
+						"metadata": {SchemaProps: spec.SchemaProps{Type: []string{"object"}}},
+						"spec": {
+							SchemaProps: spec.SchemaProps{
+								Type: []string{"object"},
+								Properties: map[string]spec.Schema{
+									"workspaceName": {SchemaProps: spec.SchemaProps{Type: []string{"string"}}},
+									"workspaceConnectionType": {SchemaProps: spec.SchemaProps{Type: []string{"string"}}},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 }
 
 func createJWTSignerFactory(config *ExtensionConfig) (jwt.SignerFactory, error) {
@@ -245,6 +338,13 @@ func createJWTSignerFactory(config *ExtensionConfig) (jwt.SignerFactory, error) 
 // createExtensionServer creates and configures the extension server
 func createExtensionServer(genericServer *genericapiserver.GenericAPIServer, config *ExtensionConfig, logger *logr.Logger, k8sClient client.Client, sarClient v1.SubjectAccessReviewInterface, jwtSingerFactory jwt.SignerFactory) *ExtensionServer {
 	server := NewExtensionServer(genericServer, config, logger, k8sClient, sarClient, jwtSingerFactory)
+	
+	// Install API group with server instance
+	if err := installWorkspaceConnectionAPIGroup(genericServer, server); err != nil {
+		setupLog.Error(err, "Failed to install workspace connection API group")
+		return nil
+	}
+	
 	server.registerAllRoutes()
 	return server
 }
@@ -290,4 +390,26 @@ func SetupExtensionAPIServerWithManager(mgr ctrl.Manager, config *ExtensionConfi
 
 	// Add server to manager
 	return addServerToManager(mgr, server)
+}
+
+// handleWorkspaceConnectionsCRUD handles CRUD operations for WorkspaceConnection
+func (s *ExtensionServer) handleWorkspaceConnectionsCRUD(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		// Return empty list
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		response := `{
+			"apiVersion": "v1",
+			"kind": "List",
+			"metadata": {"resourceVersion": "1"},
+			"items": []
+		}`
+		w.Write([]byte(response))
+	case "POST":
+		// Delegate to existing create handler
+		s.HandleConnectionCreate(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
 }

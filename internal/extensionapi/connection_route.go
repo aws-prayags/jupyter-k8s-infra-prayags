@@ -33,10 +33,9 @@ func (n *noOpPodExec) ExecInPod(ctx context.Context, pod *corev1.Pod, containerN
 
 // generateWebUIBearerTokenURL generates a Web UI connection URL with JWT token
 // Returns (connectionType, connectionURL, error)
-func (s *ExtensionServer) generateWebUIBearerTokenURL(r *http.Request, workspaceName, namespace string) (string, string, error) {
-	user := GetUser(r)
+func (s *ExtensionServer) generateWebUIBearerTokenURL(ctx context.Context, user, workspaceName, namespace string) (string, string, error) {
 	if user == "" {
-		return "", "", fmt.Errorf("user information not found in request headers")
+		return "", "", fmt.Errorf("user information not found")
 	}
 
 	// Get workspace and access strategy for signer configuration
@@ -177,13 +176,21 @@ func (s *ExtensionServer) HandleConnectionCreate(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// Extract user from request
+	user := GetUser(r)
+	if user == "" {
+		logger.Error(nil, "User not found in request headers")
+		WriteKubernetesError(w, http.StatusBadRequest, "User not found in request headers")
+		return
+	}
+
 	// Generate response based on connection type
 	var responseType, responseURL string
 	switch req.Spec.WorkspaceConnectionType {
 	case connectionv1alpha1.ConnectionTypeVSCodeRemote:
-		responseType, responseURL, err = s.generateVSCodeURL(r, req.Spec.WorkspaceName, namespace)
+		responseType, responseURL, err = s.generateVSCodeURL(r.Context(), user, req.Spec.WorkspaceName, namespace)
 	case connectionv1alpha1.ConnectionTypeWebUI:
-		responseType, responseURL, err = s.generateWebUIBearerTokenURL(r, req.Spec.WorkspaceName, namespace)
+		responseType, responseURL, err = s.generateWebUIBearerTokenURL(r.Context(), user, req.Spec.WorkspaceName, namespace)
 	default:
 		logger.Error(nil, "Invalid workspace connection type", "connectionType", req.Spec.WorkspaceConnectionType)
 		WriteKubernetesError(w, http.StatusBadRequest, "Invalid workspace connection type")
@@ -240,7 +247,7 @@ func validateWorkspaceConnectionRequest(req *connectionv1alpha1.WorkspaceConnect
 
 // generateVSCodeURL generates a VSCode connection URL using SSM remote access strategy
 // Returns (connectionType, connectionURL, error)
-func (s *ExtensionServer) generateVSCodeURL(r *http.Request, workspaceName, namespace string) (string, string, error) {
+func (s *ExtensionServer) generateVSCodeURL(ctx context.Context, user, workspaceName, namespace string) (string, string, error) {
 	logger := ctrl.Log.WithName("vscode-handler")
 
 	// Get cluster ID from config (already validated earlier)
@@ -280,7 +287,7 @@ func (s *ExtensionServer) generateVSCodeURL(r *http.Request, workspaceName, name
 	}
 
 	// Generate VSCode connection URL using SSM strategy with access strategy
-	connectionURL, err := ssmStrategy.GenerateVSCodeConnectionURL(r.Context(), workspaceName, namespace, podUID, clusterId, accessStrategy)
+	connectionURL, err := ssmStrategy.GenerateVSCodeConnectionURL(ctx, workspaceName, namespace, podUID, clusterId, accessStrategy)
 	if err != nil {
 		return "", "", err
 	}
