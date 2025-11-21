@@ -17,11 +17,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apiserver/pkg/endpoints/openapi"
 	"k8s.io/apiserver/pkg/registry/rest"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/apiserver/pkg/server/mux"
 	genericoptions "k8s.io/apiserver/pkg/server/options"
 	"k8s.io/apiserver/pkg/util/compatibility"
+	"k8s.io/kube-openapi/pkg/common"
 	"k8s.io/client-go/kubernetes"
 	v1 "k8s.io/client-go/kubernetes/typed/authorization/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -230,11 +232,21 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 		return nil, fmt.Errorf("failed to apply recommended options: %w", err)
 	}
 
-	// Disable OpenAPI for simplicity (required for InstallAPIGroup)
-	// This prevents the "OpenAPIV3 config must not be nil" error
-	setupLog.Info("🔧 Disabling OpenAPI for minimal InstallAPIGroup implementation")
-	serverConfig.OpenAPIConfig = nil
-	serverConfig.OpenAPIV3Config = nil
+	// Configure minimal OpenAPI (required for InstallAPIGroup)
+	// InstallAPIGroup requires OpenAPIV3Config to be non-nil, even if we don't use it
+	setupLog.Info("🔧 Configuring minimal OpenAPI for InstallAPIGroup compatibility")
+	
+	// Create a minimal OpenAPI config that returns empty definitions
+	emptyGetDefinitions := func(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
+		return map[string]common.OpenAPIDefinition{}
+	}
+	
+	serverConfig.OpenAPIV3Config = genericapiserver.DefaultOpenAPIV3Config(
+		emptyGetDefinitions,
+		openapi.NewDefinitionNamer(scheme),
+	)
+	serverConfig.OpenAPIV3Config.Info.Title = "Extension API"
+	serverConfig.OpenAPIV3Config.Info.Version = "v1alpha1"
 
 	// Create GenericAPIServer
 	genericServer, err := serverConfig.Complete().New("extension-apiserver", genericapiserver.NewEmptyDelegate())

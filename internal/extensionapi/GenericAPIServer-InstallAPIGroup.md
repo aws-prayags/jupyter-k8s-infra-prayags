@@ -113,9 +113,9 @@ When enabled, OpenAPI gives you:
 - **Client Generation** - Auto-generate strongly-typed clients
 - **Server-Side Validation** - Schema-based request validation
 
-### Disabling OpenAPI (Minimal Implementation)
+### Minimal OpenAPI Configuration (Required)
 
-For a minimal implementation where you don't need OpenAPI features, you can disable it:
+**Important**: You cannot set `OpenAPIV3Config` to `nil` - `InstallAPIGroup` requires it to be non-nil. Instead, provide a minimal configuration with empty definitions:
 
 ```go
 func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOptions) (*genericapiserver.GenericAPIServer, error) {
@@ -126,9 +126,18 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
         return nil, fmt.Errorf("failed to apply recommended options: %w", err)
     }
     
-    // Disable OpenAPI for simplicity
-    serverConfig.OpenAPIConfig = nil
-    serverConfig.OpenAPIV3Config = nil
+    // Configure minimal OpenAPI (required for InstallAPIGroup)
+    // InstallAPIGroup requires OpenAPIV3Config to be non-nil
+    emptyGetDefinitions := func(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
+        return map[string]common.OpenAPIDefinition{}
+    }
+    
+    serverConfig.OpenAPIV3Config = genericapiserver.DefaultOpenAPIV3Config(
+        emptyGetDefinitions,
+        openapi.NewDefinitionNamer(scheme),
+    )
+    serverConfig.OpenAPIV3Config.Info.Title = "Extension API"
+    serverConfig.OpenAPIV3Config.Info.Version = "v1alpha1"
     
     genericServer, err := serverConfig.Complete().New("extension-apiserver", genericapiserver.NewEmptyDelegate())
     if err != nil {
@@ -139,17 +148,24 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 }
 ```
 
-**What still works:**
+Required imports:
+```go
+import (
+    "k8s.io/apiserver/pkg/endpoints/openapi"
+    "k8s.io/kube-openapi/pkg/common"
+)
+```
+
+**What works with minimal config:**
 - ✅ API discovery (`kubectl api-resources`)
 - ✅ Creating resources (`kubectl create`)
 - ✅ API group listing (`/apis`, `/apis/dummy.jupyter.org`)
 - ✅ Resource discovery (`/apis/dummy.jupyter.org/v1alpha1`)
 - ✅ All CRUD operations
+- ✅ `/openapi/v3` endpoint (returns empty schemas)
 
 **What doesn't work:**
-- ❌ `kubectl explain dummyresource`
-- ❌ `/openapi/v2` endpoint
-- ❌ `/openapi/v3` endpoint
+- ❌ `kubectl explain dummyresource` (no schemas defined)
 - ❌ Automatic OpenAPI-based validation
 
 ### Enabling OpenAPI (Full Implementation)
@@ -198,10 +214,16 @@ serverConfig.OpenAPIV3Config = genericapiserver.DefaultOpenAPIV3Config(
 )
 ```
 
+### Key Findings
+
+1. **OpenAPIV3Config cannot be nil** - `InstallAPIGroup` internally calls `getOpenAPIModels()` which requires non-nil config
+2. **Minimal config works** - Providing empty definitions satisfies the requirement without generating schemas
+3. **No true "disable"** - Unlike PathRecorderMux, you must provide OpenAPI config even if unused
+
 ### Recommendation
 
-- **For demos/testing**: Disable OpenAPI (simpler, faster to implement)
-- **For production APIs**: Enable OpenAPI (better UX, tooling support)
+- **For demos/testing**: Use minimal OpenAPI config (empty definitions)
+- **For production APIs**: Implement full OpenAPI definitions (better UX, tooling support)
 - **For CRDs**: Use CustomResourceDefinitions instead (automatic OpenAPI generation)
 
 ## Implementation Structure
