@@ -36,6 +36,9 @@ var (
 )
 
 func init() {
+	// Register standard Kubernetes types (required by GenericAPIServer)
+	metav1.AddToGroupVersion(scheme, schema.GroupVersion{Version: "v1"})
+	
 	// Register dummy resource types with the scheme
 	scheme.AddKnownTypes(
 		schema.GroupVersion{Group: "connection.workspace.jupyter.org", Version: "v1alpha1"},
