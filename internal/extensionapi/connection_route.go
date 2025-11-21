@@ -102,6 +102,14 @@ func (s *ExtensionServer) generateWebUIBearerTokenURL(ctx context.Context, user,
 func (s *ExtensionServer) HandleConnectionCreate(w http.ResponseWriter, r *http.Request) {
 	logger := GetLoggerFromContext(r.Context())
 
+	// Extract user from request first
+	user := GetUser(r)
+	if user == "" {
+		logger.Error(nil, "User not found in request headers")
+		WriteKubernetesError(w, http.StatusBadRequest, "User not found in request headers")
+		return
+	}
+
 	// Ensure AWS resources are initialized (only happens once)
 	if err := aws.EnsureResourcesInitialized(r.Context()); err != nil {
 		WriteKubernetesError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to initialize resources: %v", err))
@@ -173,14 +181,6 @@ func (s *ExtensionServer) HandleConnectionCreate(w http.ResponseWriter, r *http.
 
 	if !result.Allowed {
 		WriteKubernetesError(w, http.StatusForbidden, result.Reason)
-		return
-	}
-
-	// Extract user from request
-	user := GetUser(r)
-	if user == "" {
-		logger.Error(nil, "User not found in request headers")
-		WriteKubernetesError(w, http.StatusBadRequest, "User not found in request headers")
 		return
 	}
 

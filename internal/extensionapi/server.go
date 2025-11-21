@@ -187,14 +187,8 @@ func (s *ExtensionServer) registerAllRoutes() {
 	setupLog.Info("Registered API version route", "path", s.config.ApiPath)
 
 	// Register OpenAPI endpoints for aggregation layer
-	s.registerRoute("/openapi/v2", s.handleOpenAPIv2)
-	setupLog.Info("Registered OpenAPI v2 route", "path", "/openapi/v2")
-	
-	s.registerRoute("/openapi/v3", s.handleOpenAPIv3Discovery)
-	setupLog.Info("Registered OpenAPI v3 route", "path", "/openapi/v3")
-	
-	s.registerRoute("/openapi/v3/apis/connection.workspace.jupyter.org/v1alpha1", s.handleOpenAPIv3Spec)
-	setupLog.Info("Registered OpenAPI v3 group route", "path", "/openapi/v3/apis/connection.workspace.jupyter.org/v1alpha1")
+	// s.registerRoute("/openapi/v2", s.handleOpenAPIv2)
+	// setupLog.Info("Registered OpenAPI v2 route", "path", "/openapi/v2")
 
 	// Register all namespaced routes
 	s.registerNamespacedRoutes(map[string]func(http.ResponseWriter, *http.Request){

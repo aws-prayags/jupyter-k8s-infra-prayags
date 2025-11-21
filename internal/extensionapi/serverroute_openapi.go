@@ -199,8 +199,6 @@ func (s *ExtensionServer) handleOpenAPIv2(w http.ResponseWriter, _ *http.Request
 		WriteError(w, http.StatusInternalServerError, "failed to write OpenAPI v2 response")
 	}
 }
-
-// handleOpenAPIv3Discovery serves the OpenAPI v3 discovery endpoint
 // This tells Kubernetes where to find the actual v3 spec.
 func (s *ExtensionServer) handleOpenAPIv3Discovery(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
