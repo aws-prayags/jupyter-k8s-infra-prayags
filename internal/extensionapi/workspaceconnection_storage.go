@@ -33,10 +33,15 @@ func (w *WorkspaceConnectionStorage) GetSingularName() string {
 }
 
 func (w *WorkspaceConnectionStorage) Create(ctx context.Context, obj runtime.Object, createValidation rest.ValidateObjectFunc, options *metav1.CreateOptions) (runtime.Object, error) {
+	setupLog.Info("WorkspaceConnectionStorage.Create called", "objType", fmt.Sprintf("%T", obj))
+	
 	req, ok := obj.(*WorkspaceConnection)
 	if !ok {
+		setupLog.Error(fmt.Errorf("type assertion failed"), "Expected WorkspaceConnection", "got", fmt.Sprintf("%T", obj))
 		return nil, fmt.Errorf("expected WorkspaceConnection, got %T", obj)
 	}
+	
+	setupLog.Info("WorkspaceConnection request received", "workspaceName", req.Spec.WorkspaceName, "connectionType", req.Spec.WorkspaceConnectionType)
 
 	// Validate request
 	if req.Spec.WorkspaceName == "" {

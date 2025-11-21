@@ -36,6 +36,8 @@ var (
 )
 
 func init() {
+	setupLog.Info("Initializing extension API server scheme")
+	
 	// Register standard Kubernetes types
 	metav1.AddToGroupVersion(scheme, schema.GroupVersion{Version: "v1"})
 	
@@ -46,6 +48,8 @@ func init() {
 		&WorkspaceConnectionResponse{},
 	)
 	metav1.AddToGroupVersion(scheme, schema.GroupVersion{Group: "connection.workspace.jupyter.org", Version: "v1alpha1"})
+	
+	setupLog.Info("Scheme initialized", "registeredTypes", scheme.AllKnownTypes())
 }
 
 // ExtensionServer represents the extension API HTTP server
@@ -271,6 +275,8 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 
 // installWorkspaceConnectionAPIGroup installs the workspace connection API group
 func installWorkspaceConnectionAPIGroup(genericServer *genericapiserver.GenericAPIServer, extensionServer *ExtensionServer) error {
+	setupLog.Info("Installing WorkspaceConnection API group")
+	
 	apiGroupInfo := genericapiserver.NewDefaultAPIGroupInfo(
 		"connection.workspace.jupyter.org",
 		scheme,
@@ -286,7 +292,15 @@ func installWorkspaceConnectionAPIGroup(genericServer *genericapiserver.GenericA
 	v1alpha1Storage["workspaceconnections"] = &WorkspaceConnectionStorage{server: extensionServer}
 	apiGroupInfo.VersionedResourcesStorageMap["v1alpha1"] = v1alpha1Storage
 	
-	return genericServer.InstallAPIGroup(&apiGroupInfo)
+	setupLog.Info("Installing API group with GenericAPIServer")
+	err := genericServer.InstallAPIGroup(&apiGroupInfo)
+	if err != nil {
+		setupLog.Error(err, "Failed to install API group")
+		return err
+	}
+	
+	setupLog.Info("API group installed successfully")
+	return nil
 }
 
 // getWorkspaceConnectionOpenAPIDefinitions provides OpenAPI definitions for WorkspaceConnection
@@ -388,8 +402,11 @@ func SetupExtensionAPIServerWithManager(mgr ctrl.Manager, config *ExtensionConfi
 
 // handleWorkspaceConnectionsCRUD handles CRUD operations for WorkspaceConnection
 func (s *ExtensionServer) handleWorkspaceConnectionsCRUD(w http.ResponseWriter, r *http.Request) {
+	setupLog.Info("handleWorkspaceConnectionsCRUD called", "method", r.Method, "path", r.URL.Path)
+	
 	switch r.Method {
 	case "GET":
+		setupLog.Info("Handling GET request for workspaceconnections")
 		// Return empty list
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -401,9 +418,11 @@ func (s *ExtensionServer) handleWorkspaceConnectionsCRUD(w http.ResponseWriter, 
 		}`
 		w.Write([]byte(response))
 	case "POST":
+		setupLog.Info("Handling POST request for workspaceconnections - delegating to HandleConnectionCreate")
 		// Delegate to existing create handler
 		s.HandleConnectionCreate(w, r)
 	default:
+		setupLog.Info("Method not allowed", "method", r.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }

@@ -80,7 +80,7 @@ func TestGenerateWebUIURL(t *testing.T) {
 	req := httptest.NewRequest("POST", "/test", nil)
 	req.Header.Set("X-Remote-User", testUser)
 
-	connType, url, err := server.generateWebUIBearerTokenURL(req, "test-workspace", "default")
+	connType, url, err := server.generateWebUIBearerTokenURL(context.Background(), testUser, "test-workspace", "default")
 
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
@@ -319,8 +319,9 @@ func TestGenerateVSCodeURL(t *testing.T) {
 		k8sClient: fakeClient,
 	}
 	req := httptest.NewRequest("POST", "/test", nil)
+	req.Header.Set("X-Remote-User", testUser)
 
-	_, _, err := server.generateVSCodeURL(req, "test-workspace", "default")
+	_, _, err := server.generateVSCodeURL(context.Background(), testUser, "test-workspace", "default")
 
 	if err == nil {
 		t.Error("expected error from generateVSCodeURL without pods")
@@ -374,8 +375,9 @@ func TestGenerateVSCodeURLWithPod(t *testing.T) {
 		k8sClient: fakeClient,
 	}
 	req := httptest.NewRequest("POST", "/test", nil)
+	req.Header.Set("X-Remote-User", testUser)
 
-	_, _, err := server.generateVSCodeURL(req, "test-workspace", "default")
+	_, _, err := server.generateVSCodeURL(context.Background(), testUser, "test-workspace", "default")
 
 	if err == nil {
 		t.Error("expected error from generateVSCodeURL at SSM strategy creation")
@@ -560,7 +562,8 @@ func TestGenerateVSCodeURLSSMSuccess(t *testing.T) {
 	}
 
 	req := httptest.NewRequest("POST", "/test", nil)
-	_, _, err := server.generateVSCodeURL(req, "test-workspace", "default")
+	req.Header.Set("X-Remote-User", testUser)
+	_, _, err := server.generateVSCodeURL(context.Background(), testUser, "test-workspace", "default")
 
 	if err == nil {
 		t.Error("expected error from SSM creation")
@@ -699,7 +702,7 @@ func TestGenerateWebUIBearerTokenURL(t *testing.T) {
 	req := httptest.NewRequest("POST", "/test", nil)
 	req.Header.Set("X-Remote-User", testUser)
 
-	connType, url, err := server.generateWebUIBearerTokenURL(req, "workspace1", "default")
+	connType, url, err := server.generateWebUIBearerTokenURL(context.Background(), testUser, "workspace1", "default")
 
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
@@ -753,7 +756,7 @@ func TestGenerateWebUIBearerTokenURL_SubdomainRouting(t *testing.T) {
 	req := httptest.NewRequest("POST", "/test", nil)
 	req.Header.Set("X-Remote-User", testUser)
 
-	connType, url, err := server.generateWebUIBearerTokenURL(req, "myworkspace", "default")
+	connType, url, err := server.generateWebUIBearerTokenURL(context.Background(), testUser, "myworkspace", "default")
 
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
@@ -794,7 +797,7 @@ func TestGenerateWebUIBearerTokenURL_NoAccessStrategy(t *testing.T) {
 	req := httptest.NewRequest("POST", "/test", nil)
 	req.Header.Set("X-Remote-User", testUser)
 
-	_, _, err := server.generateWebUIBearerTokenURL(req, "workspace1", "default")
+	_, _, err := server.generateWebUIBearerTokenURL(context.Background(), testUser, "workspace1", "default")
 
 	if err == nil {
 		t.Error("expected error for missing AccessStrategy, got nil")
@@ -844,7 +847,7 @@ func TestGenerateWebUIBearerTokenURL_MissingTemplate(t *testing.T) {
 	req := httptest.NewRequest("POST", "/test", nil)
 	req.Header.Set("X-Remote-User", testUser)
 
-	_, _, err := server.generateWebUIBearerTokenURL(req, "workspace1", "default")
+	_, _, err := server.generateWebUIBearerTokenURL(context.Background(), testUser, "workspace1", "default")
 
 	if err == nil {
 		t.Error("expected error for missing BearerAuthURLTemplate, got nil")
@@ -909,8 +912,9 @@ func TestGenerateVSCodeURL_MissingWorkspace(t *testing.T) {
 		k8sClient: fakeClient,
 	}
 	req := httptest.NewRequest("POST", "/test", nil)
+	req.Header.Set("X-Remote-User", testUser)
 
-	_, _, err := server.generateVSCodeURL(req, "nonexistent-workspace", "default")
+	_, _, err := server.generateVSCodeURL(context.Background(), testUser, "nonexistent-workspace", "default")
 
 	if err == nil {
 		t.Error("expected error for missing workspace")
@@ -946,8 +950,9 @@ func TestGenerateVSCodeURL_MissingAccessStrategy(t *testing.T) {
 		k8sClient: fakeClient,
 	}
 	req := httptest.NewRequest("POST", "/test", nil)
+	req.Header.Set("X-Remote-User", testUser)
 
-	_, _, err := server.generateVSCodeURL(req, "test-workspace", "default")
+	_, _, err := server.generateVSCodeURL(context.Background(), testUser, "test-workspace", "default")
 
 	if err == nil {
 		t.Error("expected error for missing access strategy")
@@ -1014,8 +1019,9 @@ func TestGenerateVSCodeURL_MissingSSMDocumentName(t *testing.T) {
 		k8sClient: fakeClient,
 	}
 	req := httptest.NewRequest("POST", "/test", nil)
+	req.Header.Set("X-Remote-User", testUser)
 
-	_, _, err := server.generateVSCodeURL(req, "test-workspace", "default")
+	_, _, err := server.generateVSCodeURL(context.Background(), testUser, "test-workspace", "default")
 
 	if err == nil {
 		t.Error("expected error from SSM strategy creation")
