@@ -227,6 +227,11 @@ func createRecommendedOptions(config *ExtensionConfig) *genericoptions.Recommend
 	recommendedOptions.SecureServing.ServerCert.CertKey.KeyFile = config.KeyPath
 	recommendedOptions.SecureServing.ServerCert.PairName = "tls"
 
+	// Disable etcd to use custom in-memory storage
+	// This is critical for InstallAPIGroup to use our custom storage implementation
+	recommendedOptions.Etcd = nil
+	setupLog.Info("🚫 Disabled etcd - using custom in-memory storage for dummy API")
+
 	return recommendedOptions
 }
 
