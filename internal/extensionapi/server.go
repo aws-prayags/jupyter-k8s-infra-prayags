@@ -215,10 +215,20 @@ func createSARClient(mgr ctrl.Manager) (v1.SubjectAccessReviewInterface, error) 
 
 // createRecommendedOptions creates GenericAPIServer options from config
 func createRecommendedOptions(config *ExtensionConfig) *genericoptions.RecommendedOptions {
+	setupLog.Info("🔧 Creating RecommendedOptions...")
+	
 	recommendedOptions := genericoptions.NewRecommendedOptions(
 		"/unused",
 		nil, // No codec needed for our simple case
 	)
+
+	// Log initial etcd state
+	if recommendedOptions.Etcd != nil {
+		setupLog.Info("⚠️  RecommendedOptions created WITH etcd configuration", 
+			"etcdServers", recommendedOptions.Etcd.StorageConfig.Transport.ServerList)
+	} else {
+		setupLog.Info("✅ RecommendedOptions created WITHOUT etcd configuration")
+	}
 
 	// Configure port and certificates
 	recommendedOptions.SecureServing.BindPort = config.ServerPort
@@ -230,21 +240,56 @@ func createRecommendedOptions(config *ExtensionConfig) *genericoptions.Recommend
 	// Disable etcd to use custom in-memory storage
 	// This is critical for InstallAPIGroup to use our custom storage implementation
 	recommendedOptions.Etcd = nil
-	setupLog.Info("🚫 Disabled etcd - using custom in-memory storage for dummy API")
+	setupLog.Info("🚫 Explicitly set Etcd to nil - forcing custom in-memory storage")
 
 	return recommendedOptions
 }
 
 // createGenericAPIServer creates a GenericAPIServer from options
 func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOptions) (*genericapiserver.GenericAPIServer, error) {
+	setupLog.Info("🏗️  Creating GenericAPIServer...")
+	
 	// Create server config
 	serverConfig := genericapiserver.NewRecommendedConfig(codecs)
 	serverConfig.EffectiveVersion = compatibility.DefaultBuildEffectiveVersion()
 
-	// Apply options to configure authentication automatically
-	if err := recommendedOptions.ApplyTo(serverConfig); err != nil {
-		return nil, fmt.Errorf("failed to apply recommended options: %w", err)
+	// Log storage config before applying options
+	setupLog.Info("📊 ServerConfig created", 
+		"hasStorageFactory", serverConfig.RESTOptionsGetter != nil)
+
+	// Apply options individually to skip etcd
+	// We must apply each option separately since we disabled Etcd
+	setupLog.Info("🔧 Applying SecureServing options...")
+	if err := recommendedOptions.SecureServing.ApplyTo(&serverConfig.SecureServing, &serverConfig.LoopbackClientConfig); err != nil {
+		return nil, fmt.Errorf("failed to apply secure serving options: %w", err)
 	}
+	
+	setupLog.Info("🔧 Applying Authentication options...")
+	if err := recommendedOptions.Authentication.ApplyTo(&serverConfig.Authentication, serverConfig.SecureServing, serverConfig.OpenAPIConfig); err != nil {
+		return nil, fmt.Errorf("failed to apply authentication options: %w", err)
+	}
+	
+	setupLog.Info("🔧 Applying Authorization options...")
+	if err := recommendedOptions.Authorization.ApplyTo(&serverConfig.Authorization); err != nil {
+		return nil, fmt.Errorf("failed to apply authorization options: %w", err)
+	}
+	
+	setupLog.Info("🔧 Applying Audit options...")
+	if err := recommendedOptions.Audit.ApplyTo(&serverConfig.Config); err != nil {
+		return nil, fmt.Errorf("failed to apply audit options: %w", err)
+	}
+	
+	setupLog.Info("🔧 Applying Features options...")
+	if err := recommendedOptions.Features.ApplyTo(&serverConfig.Config); err != nil {
+		return nil, fmt.Errorf("failed to apply feature options: %w", err)
+	}
+	
+	// Skip Etcd.ApplyTo() - we're using custom in-memory storage
+	setupLog.Info("⏭️  SKIPPING Etcd.ApplyTo() - using custom storage only")
+	
+	// Log final storage config
+	setupLog.Info("📊 Final ServerConfig state", 
+		"hasRESTOptionsGetter", serverConfig.RESTOptionsGetter != nil)
 
 	// Configure minimal OpenAPI (required for InstallAPIGroup)
 	// InstallAPIGroup requires OpenAPIV3Config and type definitions
@@ -288,6 +333,7 @@ func installDummyAPIGroup(genericServer *genericapiserver.GenericAPIServer) erro
 
 	// Create storage
 	dummyStorage := storage.NewDummyStorage()
+	setupLog.Info("💾 Created DummyStorage instance", "type", fmt.Sprintf("%T", dummyStorage))
 
 	// Create API group info
 	apiGroupInfo := genericapiserver.NewDefaultAPIGroupInfo(
@@ -296,20 +342,28 @@ func installDummyAPIGroup(genericServer *genericapiserver.GenericAPIServer) erro
 		metav1.ParameterCodec,
 		codecs,
 	)
+	setupLog.Info("📋 Created APIGroupInfo", "group", dummyv1alpha1.GroupName)
 
 	// Register storage for v1alpha1
 	v1alpha1Storage := map[string]rest.Storage{
 		"dummyresources": dummyStorage,
 	}
 	apiGroupInfo.VersionedResourcesStorageMap["v1alpha1"] = v1alpha1Storage
+	setupLog.Info("🗂️  Registered storage in VersionedResourcesStorageMap", 
+		"version", "v1alpha1", 
+		"resource", "dummyresources",
+		"storageType", fmt.Sprintf("%T", dummyStorage))
 
 	// Install API group
-	setupLog.Info("📦 Registering metav1 types and installing API group...")
+	setupLog.Info("📦 Calling InstallAPIGroup...")
 	if err := genericServer.InstallAPIGroup(&apiGroupInfo); err != nil {
 		return fmt.Errorf("failed to install dummy API group: %w", err)
 	}
 
-	setupLog.Info("🎉 Successfully installed dummy API group!", "group", dummyv1alpha1.GroupName, "version", "v1alpha1")
+	setupLog.Info("🎉 Successfully installed dummy API group!", 
+		"group", dummyv1alpha1.GroupName, 
+		"version", "v1alpha1",
+		"registeredStorage", "dummyresources")
 	return nil
 }
 

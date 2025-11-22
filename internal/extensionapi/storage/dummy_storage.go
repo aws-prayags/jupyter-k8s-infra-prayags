@@ -55,15 +55,20 @@ var _ rest.TableConvertor = &DummyStorage{}
 // NewDummyStorage creates a new DummyStorage
 func NewDummyStorage() *DummyStorage {
 	storageLog.Info("💾 Creating new in-memory DummyStorage")
-	return &DummyStorage{
+	storage := &DummyStorage{
 		items: make(map[string]map[string]*dummyv1alpha1.DummyResource),
 	}
+	storageLog.Info("✅ DummyStorage initialized", 
+		"address", fmt.Sprintf("%p", storage),
+		"itemsMap", fmt.Sprintf("%p", storage.items))
+	return storage
 }
 
 // ============ rest.Storage ============
 
 // New returns a new empty DummyResource object
 func (s *DummyStorage) New() runtime.Object {
+	storageLog.Info("🆕 New() called - returning empty DummyResource")
 	return &dummyv1alpha1.DummyResource{}
 }
 
