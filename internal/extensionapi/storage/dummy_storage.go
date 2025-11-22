@@ -112,7 +112,20 @@ func (s *DummyStorage) Create(
 		namespace = "default"
 	}
 
-	storageLog.Info("➕ CREATE request", "name", dummy.Name, "namespace", namespace, "message", dummy.Spec.Message)
+	storageLog.Info("➕ CREATE request", "name", dummy.Name, "namespace", namespace, 
+		"workspaceName", dummy.Spec.WorkspaceName, "connectionType", dummy.Spec.WorkspaceConnectionType)
+
+	// Validate required fields
+	if dummy.Spec.WorkspaceName == "" {
+		err := fmt.Errorf("workspaceName is required")
+		storageLog.Error(err, "❌ CREATE validation failed", "name", dummy.Name, "namespace", namespace)
+		return nil, err
+	}
+	if dummy.Spec.WorkspaceConnectionType == "" {
+		err := fmt.Errorf("workspaceConnectionType is required")
+		storageLog.Error(err, "❌ CREATE validation failed", "name", dummy.Name, "namespace", namespace)
+		return nil, err
+	}
 
 	// Run validation
 	if err := createValidation(ctx, obj); err != nil {
@@ -139,16 +152,37 @@ func (s *DummyStorage) Create(
 		s.items[namespace] = make(map[string]*dummyv1alpha1.DummyResource)
 	}
 
-	// Set metadata and status
+	// Set metadata
 	now := metav1.Now()
 	dummy.CreationTimestamp = now
-	dummy.Status.Phase = "Active"
-	dummy.Status.LastUpdate = now
+
+	// Generate connection URL based on type
+	var connectionURL string
+	switch dummy.Spec.WorkspaceConnectionType {
+	case "vscode-remote":
+		connectionURL = fmt.Sprintf("vscode-remote://dummy-connection/%s/%s", 
+			namespace, dummy.Spec.WorkspaceName)
+		storageLog.Info("🔗 Generated VSCode remote URL", "url", connectionURL)
+	case "web-ui":
+		connectionURL = fmt.Sprintf("https://jupyter.test.com/workspaces/%s/%s/bearer-auth?token=dummy-token-12345", 
+			namespace, dummy.Spec.WorkspaceName)
+		storageLog.Info("🔗 Generated Web UI URL", "url", connectionURL)
+	default:
+		err := fmt.Errorf("invalid workspaceConnectionType: %s (must be 'web-ui' or 'vscode-remote')", 
+			dummy.Spec.WorkspaceConnectionType)
+		storageLog.Error(err, "❌ CREATE failed", "name", dummy.Name, "namespace", namespace)
+		return nil, err
+	}
+
+	// Set status with generated URL
+	dummy.Status.WorkspaceConnectionType = dummy.Spec.WorkspaceConnectionType
+	dummy.Status.WorkspaceConnectionURL = connectionURL
 
 	// Store
 	s.items[namespace][dummy.Name] = dummy.DeepCopy()
 
-	storageLog.Info("✅ CREATE successful", "name", dummy.Name, "namespace", namespace, "phase", dummy.Status.Phase)
+	storageLog.Info("✅ CREATE successful", "name", dummy.Name, "namespace", namespace, 
+		"connectionType", dummy.Status.WorkspaceConnectionType, "url", connectionURL)
 	return dummy, nil
 }
 
@@ -189,7 +223,8 @@ func (s *DummyStorage) Get(
 		)
 	}
 
-	storageLog.Info("✅ GET successful", "name", name, "namespace", namespace, "phase", item.Status.Phase)
+	storageLog.Info("✅ GET successful", "name", name, "namespace", namespace, 
+		"connectionType", item.Status.WorkspaceConnectionType)
 	return item.DeepCopy(), nil
 }
 
@@ -289,13 +324,11 @@ func (s *DummyStorage) Update(
 		return nil, false, err
 	}
 
-	// Update status
-	updatedDummy.Status.LastUpdate = metav1.Now()
-
 	// Store
 	s.items[namespace][name] = updatedDummy.DeepCopy()
 
-	storageLog.Info("✅ UPDATE successful", "name", name, "namespace", namespace, "phase", updatedDummy.Status.Phase)
+	storageLog.Info("✅ UPDATE successful", "name", name, "namespace", namespace, 
+		"connectionType", updatedDummy.Status.WorkspaceConnectionType)
 	return updatedDummy, false, nil
 }
 
@@ -353,8 +386,9 @@ func (s *DummyStorage) ConvertToTable(ctx context.Context, object runtime.Object
 	table := &metav1.Table{
 		ColumnDefinitions: []metav1.TableColumnDefinition{
 			{Name: "Name", Type: "string", Format: "name"},
-			{Name: "Message", Type: "string"},
-			{Name: "Phase", Type: "string"},
+			{Name: "Workspace", Type: "string"},
+			{Name: "Type", Type: "string"},
+			{Name: "URL", Type: "string"},
 			{Name: "Age", Type: "string"},
 		},
 	}
@@ -364,8 +398,9 @@ func (s *DummyStorage) ConvertToTable(ctx context.Context, object runtime.Object
 		table.Rows = append(table.Rows, metav1.TableRow{
 			Cells: []interface{}{
 				obj.Name,
-				obj.Spec.Message,
-				obj.Status.Phase,
+				obj.Spec.WorkspaceName,
+				obj.Spec.WorkspaceConnectionType,
+				obj.Status.WorkspaceConnectionURL,
 				obj.CreationTimestamp.Time,
 			},
 			Object: runtime.RawExtension{Object: obj},
@@ -375,8 +410,9 @@ func (s *DummyStorage) ConvertToTable(ctx context.Context, object runtime.Object
 			table.Rows = append(table.Rows, metav1.TableRow{
 				Cells: []interface{}{
 					item.Name,
-					item.Spec.Message,
-					item.Status.Phase,
+					item.Spec.WorkspaceName,
+					item.Spec.WorkspaceConnectionType,
+					item.Status.WorkspaceConnectionURL,
 					item.CreationTimestamp.Time,
 				},
 				Object: runtime.RawExtension{Object: &item},

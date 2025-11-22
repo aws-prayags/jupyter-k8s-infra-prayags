@@ -32,16 +32,18 @@ type DummyResource struct {
 
 // DummyResourceSpec defines the desired state of DummyResource
 type DummyResourceSpec struct {
-	// Message is a simple string field
-	Message string `json:"message"`
+	// WorkspaceName is the name of the workspace
+	WorkspaceName string `json:"workspaceName"`
+	// WorkspaceConnectionType is the type of connection (web-ui or vscode-remote)
+	WorkspaceConnectionType string `json:"workspaceConnectionType"`
 }
 
 // DummyResourceStatus defines the observed state of DummyResource
 type DummyResourceStatus struct {
-	// Phase represents the current phase of the resource
-	Phase string `json:"phase,omitempty"`
-	// LastUpdate is the timestamp of the last update
-	LastUpdate metav1.Time `json:"lastUpdate,omitempty"`
+	// WorkspaceConnectionType is the type of connection
+	WorkspaceConnectionType string `json:"workspaceConnectionType,omitempty"`
+	// WorkspaceConnectionURL is the generated connection URL
+	WorkspaceConnectionURL string `json:"workspaceConnectionUrl,omitempty"`
 }
 
 // +kubebuilder:object:root=true

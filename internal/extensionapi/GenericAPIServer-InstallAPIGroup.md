@@ -240,12 +240,27 @@ serverConfig.OpenAPIV3Config = genericapiserver.DefaultOpenAPIV3Config(
 )
 ```
 
-### Key Findings
+### Key Findings & Lessons Learned
 
-1. **OpenAPIV3Config cannot be nil** - `InstallAPIGroup` internally calls `getOpenAPIModels()` which requires non-nil config
-2. **Type definitions are mandatory** - Must provide OpenAPI definition for every type you register, cannot return empty map
-3. **No true "disable"** - Unlike PathRecorderMux, you must provide OpenAPI config with type definitions
-4. **Validation happens at startup** - `InstallAPIGroup` validates all type definitions exist during installation, not at runtime
+**OpenAPI Requirements:**
+1. **OpenAPIV3Config cannot be nil** - `InstallAPIGroup` requires non-nil config
+2. **Type definitions mandatory** - Must provide OpenAPI definition for every registered type
+3. **No true "disable"** - Must provide config with type definitions, unlike PathRecorderMux
+
+**Scheme Requirements:**
+4. **Register metav1 types first** - Must register `ListOptions`, `GetOptions`, etc. before your types:
+   ```go
+   metav1.AddToGroupVersion(scheme, schema.GroupVersion{Version: "v1"})
+   ```
+
+**Storage Requirements:**
+5. **SingularNameProvider required** - Must implement `GetSingularName() string`
+6. **Full CRUD interfaces** - For production use, implement: `Creater`, `Getter`, `Lister`, `Updater`, `GracefulDeleter`, `TableConvertor`
+7. **List type required** - Must define and register `YourResourceList` type for LIST operations
+
+**Validation:**
+8. **Startup validation** - All requirements validated during `InstallAPIGroup()`, not at runtime
+9. **Errors are cryptic** - Missing interfaces/types result in generic error messages
 
 ### Recommendation
 
@@ -253,28 +268,26 @@ serverConfig.OpenAPIV3Config = genericapiserver.DefaultOpenAPIV3Config(
 - **For production APIs**: Implement full OpenAPI definitions (better UX, tooling support)
 - **For CRDs**: Use CustomResourceDefinitions instead (automatic OpenAPI generation)
 
-## Implementation Structure
+## Minimal Working Implementation
 
-### 1. Scheme Registration
+See `api/dummy/v1alpha1/` and `internal/extensionapi/storage/dummy_storage.go` for complete example.
+
+### 1. Scheme Registration (server.go)
 
 ```go
-import (
-    connectionv1alpha1 "github.com/jupyter-ai-contrib/jupyter-k8s/api/connection/v1alpha1"
-    "k8s.io/apimachinery/pkg/runtime"
-    "k8s.io/apimachinery/pkg/runtime/schema"
-    "k8s.io/apimachinery/pkg/runtime/serializer"
-)
-
 var (
     scheme = runtime.NewScheme()
     codecs serializer.CodecFactory
 )
 
 func init() {
-    // Register WorkspaceConnection types
-    connectionv1alpha1.AddToScheme(scheme)
+    // Register metav1 types FIRST (required for ListOptions, etc.)
+    metav1.AddToGroupVersion(scheme, schema.GroupVersion{Version: "v1"})
     
-    // Create codec factory for serialization/deserialization
+    // Register your API types
+    utilruntime.Must(dummyv1alpha1.AddToScheme(scheme))
+    
+    // Create codec factory after all types registered
     codecs = serializer.NewCodecFactory(scheme)
 }
 ```

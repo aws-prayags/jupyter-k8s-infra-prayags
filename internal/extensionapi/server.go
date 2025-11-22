@@ -251,7 +251,7 @@ func createGenericAPIServer(recommendedOptions *genericoptions.RecommendedOption
 			"github.com/jupyter-ai-contrib/jupyter-k8s/api/dummy/v1alpha1.DummyResource": {
 				Schema: spec.Schema{
 					SchemaProps: spec.SchemaProps{
-						Description: "DummyResource is a minimal demo resource",
+						Description: "DummyResource demonstrates InstallAPIGroup with workspace connection format",
 						Type:        []string{"object"},
 					},
 				},
